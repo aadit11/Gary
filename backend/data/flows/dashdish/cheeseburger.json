@@ -1,0 +1,40 @@
+{
+  "site": "dashdish",
+  "key": "cheeseburger",
+  "goal": "Order one Classic Cheeseburger from Souvla for delivery and place the order.",
+  "steps": [
+    {
+      "action": "goto",
+      "args": [
+        "https://evals-dashdish.vercel.app/store/card.store:store:974839"
+      ]
+    },
+    {
+      "action": "click",
+      "role": "button",
+      "name": "Add"
+    },
+    {
+      "action": "click",
+      "role": "button",
+      "name": "Add to cart.*"
+    },
+    {
+      "action": "click",
+      "role": "button",
+      "name": "^\\d+$"
+    },
+    {
+      "action": "click",
+      "role": "button",
+      "name": "Checkout.*"
+    },
+    {
+      "action": "click",
+      "role": "button",
+      "name": "^Place Order"
+    }
+  ],
+  "result_text": "DONE: Ordered one Classic Cheeseburger from Souvla for delivery, order ID ORD-1790378879640-461.",
+  "saved_at": "2026-09-25T16:28:09"
+}

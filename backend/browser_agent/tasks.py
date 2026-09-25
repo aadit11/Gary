@@ -17,11 +17,12 @@ SITES = ("dashdish", "udriver")
 # app once would have. Describe the flow, never specific element ids.
 SITE_HINTS = {
     "dashdish": (
-        "How DashDish works: use the search box at the top to find the restaurant, open its page, "
-        "click the Add button next to the item you want (a quantity dialog may appear; confirm it), "
-        "then click the cart button at the top right, click Checkout in the cart drawer, and on the "
-        "checkout page click Place Order. The order is complete only after Place Order has been clicked "
-        "and a confirmation is shown."
+        "How DashDish works: use the search box at the top to find the restaurant and open its page by "
+        "clicking its heading or link (prefer headings, links, and buttons over images). Click the Add button "
+        "next to the item you want; a dialog appears with size options and an 'Add to cart' button, click that. "
+        "Then open the cart: it is the button at the top right whose label is just the item count (pattern ^\\d+$). "
+        "Click Checkout in the cart drawer, and on the checkout page click Place Order. The order is complete "
+        "only after Place Order has been clicked and a confirmation is shown."
     ),
     "udriver": (
         "How Udriver works: type the pickup place in 'Enter Location' and pick a suggestion from the list, "

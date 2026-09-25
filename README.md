@@ -146,7 +146,7 @@ Food and rides are placed on REAL's DashDish and Udriver clones by Muse Spark dr
 uv run python scripts/run_browser_task.py dashdish "Order one Classic Cheeseburger from Souvla for delivery and place the order." --headed
 ```
 
-It prints every step, the wall-clock time, and the agent's final message. A DashDish order takes about 50 to 80 seconds. `--no-screenshot` sends only the accessibility tree and is faster.
+It prints every step, the wall-clock time, and the agent's final message. A first-time DashDish order takes about 30 to 35 seconds. Add `--flow-key usual-soup` to have the agent remember the flow; the next run with the same key replays it in about 20 seconds and only calls the model to confirm. `--no-screenshot` sends only the accessibility tree (the default in `.env` for the demo).
 
 ## Testing
 
