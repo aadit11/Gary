@@ -142,8 +142,19 @@ def test_runner_learns_and_replays_flow(demo, tmp_path):
     r2 = BrowserJobRunner(env_factory=lambda s, g, h: env2,
                           agent_factory=lambda g, ss: FakeAgent([['send_msg_to_user("DONE: again")']]), flow_store=fs)
     job2 = r2.run_now("dashdish", "order", flow_key="usual")
-    assert job2.ok and job2.replayed_steps == 1 and job2.model_calls == 1
+    assert job2.ok and job2.replayed_steps == 1 and job2.model_calls == 0 and job2.result_text == "DONE: ok"
     assert env2.stepped == ["click_named('button', 'Checkout\\\\ .*')"]
+
+    from config import settings
+    settings.browser_replay_verify = True
+    try:
+        env2b = FakeEnv()
+        r2b = BrowserJobRunner(env_factory=lambda s, g, h: env2b,
+                               agent_factory=lambda g, ss: FakeAgent([['send_msg_to_user("DONE: verified")']]), flow_store=fs)
+        job2b = r2b.run_now("dashdish", "order", flow_key="usual")
+        assert job2b.ok and job2b.model_calls == 1 and job2b.result_text == "DONE: verified"
+    finally:
+        settings.browser_replay_verify = False
 
     env3 = FakeEnv(fail_on={"click_named"})
     r3 = BrowserJobRunner(env_factory=lambda s, g, h: env3,
