@@ -11,7 +11,7 @@ Describe **state**, not history. Update your row when you merge a PR that change
 | `scheduler/` | Person 1 | — | Everything. |
 | `mcp_servers/checkins.py` | Person 1 | Server exists with a stub `get_upcoming_appointments` so the adapter has something to call. | The real three tools. |
 | `core/` (db, models, policy, pending, approvals, notify, activity, speech) | Person 2 | All modules implemented and unit tested. `db.get_client()` falls back to an in-memory fake when `SUPABASE_URL` is unset or `GARY_FAKE_DB=1`. | Phase 2 policy refinements (per-kind limits, scam scoring via Meta API). |
-| `webhooks/sms.py` | Person 2 | `POST /webhooks/sms` parses YES/NO, resolves the newest pending approval for that family phone, replies with TwiML. **Verified end to end with a real WhatsApp reply** through ngrok. | Live-call injection of the result (Person 1, via `approvals.register`). |
+| `webhooks/sms.py` | Person 2 | `POST /webhooks/sms` parses YES/NO, resolves the newest pending approval for that family phone, replies with TwiML. Outbound approval request verified delivered and read on WhatsApp through the sandbox. **Inbound reply not yet tested**: needs a YES/NO from the joined phone. | Live-call injection of the result (Person 1, via `approvals.register`). |
 | `mcp_servers/money.py` | Person 2 | `list_bills_due` reads the `bills` table and speaks amounts and dates. | The other five tools (Phase 2). |
 | `main.py` (app, lifespan, MCP mounts) | Person 2 | All four MCP servers mounted at `/mcp/<name>` with session managers started in the lifespan; verified with an MCP client. SMS router included. `GET /health`. | Voice routes and scheduler startup (Person 1 adds to the lifespan). |
 | `supabase/migrations/` | Person 2 | `0001_init.sql` defines all 15 tables. | Applied to the Supabase project (without RLS; backend uses the secret key, dashboard can use the publishable key). Seeded with the demo user. |
@@ -46,7 +46,7 @@ Things another person needs to know to build on your work: signature changes, ne
 
 One line per merged PR, newest first. Keep it to what changed, not how.
 
-- 2026-09-25: Family approvals verified live over WhatsApp sandbox (request text, NO reply, approval denied). SMS blocked by carrier registration; `FAMILY_CHANNEL` switch added.
+- 2026-09-25: Family approval request delivered live over WhatsApp sandbox; reply loop pending a real YES/NO. SMS blocked by carrier registration; `FAMILY_CHANNEL` switch added.
 - 2026-09-25: Schema applied to Supabase and demo user seeded; `DEMO_USER_ID` set in Person 2's .env.
 - 2026-09-25: Person 2 Phase 1: core library, schema, four mounted MCP servers with one stub tool each, SMS approval webhook, seed script, 23 tests.
 - 2026-09-24: Scaffolded the skeleton file structure from AGENTS.md. All files are stubs.
