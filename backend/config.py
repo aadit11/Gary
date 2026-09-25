@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     family_channel: str = "sms"
     twilio_whatsapp_from: str = "whatsapp:+14155238886"  # Twilio's shared sandbox number
 
+    # Voice agent (Deepgram Voice Agent API)
+    deepgram_agent_url: str = "wss://agent.deepgram.com/v1/agent/converse"
+    deepgram_think_model: str = "gpt-4o-mini"     # Deepgram-managed OpenAI model
+    deepgram_voice: str = "flux-alexis-en"        # Deepgram speak model (v2)
+    port: int = 8000                              # local port; the MCP adapter connects over loopback
+
     # Set GARY_FAKE_DB=1 to force the in-memory database (tests, teammates without creds).
     gary_fake_db: bool = False
 

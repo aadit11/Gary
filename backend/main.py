@@ -14,6 +14,11 @@ from fastapi import FastAPI
 
 from config import settings
 from mcp_servers import SERVERS, mount_path
+from core import approvals
+from scheduler.jobs import start_scheduler
+from voice import injection
+from voice.mcp_adapter import MCPAdapter
+from voice.twilio_routes import router as voice_router
 from webhooks.sms import router as sms_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -29,12 +34,22 @@ async def lifespan(app: FastAPI):
         for name, server in SERVERS.items():
             await stack.enter_async_context(server.session_manager.run())
             log.info("MCP server '%s' ready at %s/mcp", name, mount_path(name))
-        # Person 1: start the voice MCP adapter and scheduler here.
-        yield
+        adapter = MCPAdapter()
+        await adapter.start()
+        app.state.adapter = adapter
+        approvals.register(injection.on_approval_resolved)
+        scheduler = start_scheduler() if settings.public_base_url else None
+        try:
+            yield
+        finally:
+            if scheduler:
+                scheduler.shutdown(wait=False)
+            await adapter.stop()
 
 
 app = FastAPI(title="Gary backend", lifespan=lifespan)
 app.include_router(sms_router)
+app.include_router(voice_router)
 
 for _name, _mcp_app in _mcp_apps.items():
     app.mount(mount_path(_name), _mcp_app)

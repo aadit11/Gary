@@ -18,7 +18,7 @@ from core import db  # noqa: E402
 DEMO = {
     "user": {
         "name": "Margaret Chen",
-        "phone": "+15550100001",  # the demo caller's phone (Grandma)
+        "phone": "+14089814724",  # the demo caller's phone (Grandma)
         "address": "12 Oak Lane, Springfield",
         "timezone": "America/New_York",
     },

@@ -7,8 +7,8 @@ Describe **state**, not history. Update your row when you merge a PR that change
 
 | Area | Owner | Working end to end | Stubbed / not started |
 |---|---|---|---|
-| `voice/` (Twilio routes, bridge, MCP adapter, injection) | Person 1 | — | Everything. Files hold docstrings only. |
-| `scheduler/` | Person 1 | — | Everything. |
+| `voice/` (Twilio routes, bridge, MCP adapter, injection) | Person 1 (built by Person 2 with agent help, 2026-09-25) | Inbound TwiML, Twilio<->Deepgram bridge (mulaw 8k, Flux listen, gpt-4o-mini think, Deepgram v2 speak), barge-in `clear`, function calls routed to MCP tools, KeepAlive, approval injection into live calls, outbound TwiML + `place_outbound_call()`. Verified with a fake Twilio client: Deepgram speaks the greeting. | Real phone-call test, morning briefing flow, prompt tuning after listening to real calls. |
+| `scheduler/` | Person 1 | APScheduler runs `run_due_reminders()` every 60 s: matches active reminders to the current minute in the user's timezone, logs to `reminder_logs`, places the call. Only starts when `PUBLIC_BASE_URL` is set. | Morning briefing job, retries, family alert when unconfirmed. |
 | `mcp_servers/checkins.py` | Person 1 | Server exists with a stub `get_upcoming_appointments` so the adapter has something to call. | The real three tools. |
 | `core/` (db, models, policy, pending, approvals, notify, activity, speech) | Person 2 | All modules implemented and unit tested. `db.get_client()` falls back to an in-memory fake when `SUPABASE_URL` is unset or `GARY_FAKE_DB=1`. | Phase 2 policy refinements (per-kind limits, scam scoring via Meta API). |
 | `webhooks/sms.py` | Person 2 | `POST /webhooks/sms` parses YES/NO, resolves the newest pending approval for that family phone, replies with TwiML. Outbound approval request verified delivered and read on WhatsApp through the sandbox. **Inbound reply not yet tested**: needs a YES/NO from the joined phone. | Live-call injection of the result (Person 1, via `approvals.register`). |
@@ -33,6 +33,11 @@ Things another person needs to know to build on your work: signature changes, ne
 - **Policy**: `policy.check(kind, payee, amount, user_id, message_text=None)` returns `Decision(needs_approval, reason, family_name)`. Call it inside every money-moving tool.
 - **Approvals**: `approvals.request(user_id, action, payload, reason, summary=None)` texts the approver. When the family replies, `webhooks/sms.py` resolves it and runs `ACTION_EXECUTORS[action]` (register yours: `ACTION_EXECUTORS["pay_bill"] = fn`). `approvals.register(callback)` is where Person 1 hooks `voice/injection.py` to tell the live call the outcome.
 - **Family messaging channel**: `notify.send_sms(to, body)` sends on `FAMILY_CHANNEL` (`whatsapp` for the demo, `sms` once 10DLC clears). Inbound WhatsApp replies arrive at the same `/webhooks/sms` route; `From` comes in as `whatsapp:+1...` and `normalize_phone` handles it.
+- **Voice call parameters**: TwiML `<Stream>` carries `user_id`, `reason` (`inbound` | `reminder` | `morning_briefing`), and `reminder_text`. `voice/agent_settings.py` picks the prompt, greeting, and which MCP servers to expose per reason (`SERVERS_BY_REASON`).
+- **MCP adapter transport**: `MCPAdapter()` defaults to in-process sessions over the same FastMCP objects (no loopback HTTP; uvicorn isn't listening yet during lifespan startup). `MCPAdapter(transport="http")` uses real streamable-HTTP sessions. Schemas are identical either way.
+- **Live-call injection**: `voice.bridge.ACTIVE_SESSIONS[user_id]` is the live session; `voice/injection.py` is registered with `approvals.register()` and speaks the family's decision with `InjectAgentMessage` (`behavior: interrupt`).
+- **Outbound calls**: `voice.twilio_routes.place_outbound_call(user_id, reason, reminder_id=None)`. Twilio fetches `/voice/outbound-twiml?...` which returns the same stream TwiML.
+- **Twilio number webhooks** (set via REST, must be re-pointed when ngrok restarts): voice -> `PUBLIC_BASE_URL/voice/incoming`, SMS -> `PUBLIC_BASE_URL/webhooks/sms`. WhatsApp sandbox inbound URL is set in the console.
 - **Fake database for tests**: `tests/conftest.py` forces `GARY_FAKE_DB=1` and provides a `demo` fixture with a user, approver, known payees, and bills. Write your tool tests against it; no network needed.
 - `backend/pyproject.toml` lists dependencies by name without pins. Run `uv sync` once and commit the lockfile.
 - `web/package.json` uses `latest` for all packages. Run `npm install` once and commit the lockfile.
@@ -46,6 +51,7 @@ Things another person needs to know to build on your work: signature changes, ne
 
 One line per merged PR, newest first. Keep it to what changed, not how.
 
+- 2026-09-25: Voice bridge, MCP adapter, prompts, turn-taking settings, injection, outbound calls, minimal scheduler. 49 tests. Deepgram greeting verified with a fake Twilio client; real call pending.
 - 2026-09-25: Family approval request delivered live over WhatsApp sandbox; reply loop pending a real YES/NO. SMS blocked by carrier registration; `FAMILY_CHANNEL` switch added.
 - 2026-09-25: Schema applied to Supabase and demo user seeded; `DEMO_USER_ID` set in Person 2's .env.
 - 2026-09-25: Person 2 Phase 1: core library, schema, four mounted MCP servers with one stub tool each, SMS approval webhook, seed script, 23 tests.
