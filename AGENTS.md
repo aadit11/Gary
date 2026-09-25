@@ -2,6 +2,8 @@
 
 Guidance for AI coding agents (and humans) working in this repo. Read this before making changes.
 
+For the current build status, integration notes, and blockers, read `CONTEXT.md` before starting work in an area, and update it when you merge a PR.
+
 ## Project overview
 
 A phone-based voice assistant for older adults. The user calls a regular phone number (landline or mobile) and asks for what they need in plain language. A voice agent carries out the task. Family members stay in the loop through SMS and a web dashboard, and approve anything risky.
@@ -39,6 +41,7 @@ Flows:
 ```
 .
 ├── AGENTS.md
+├── CONTEXT.md                       # current build status per area; update on every merged PR
 ├── README.md
 ├── .env.example
 ├── supabase/
