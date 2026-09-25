@@ -1,0 +1,26 @@
+[project]
+name = "gary-backend"
+version = "0.1.0"
+description = "FastAPI backend: Twilio webhooks, Twilio<->Deepgram voice bridge, MCP servers, SMS webhook, scheduler."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "pydantic-settings",
+    "mcp",
+    "httpx",
+    "websockets",
+    "twilio",
+    "supabase",
+    "apscheduler",
+    "google-api-python-client",
+    "google-auth",
+    "google-auth-oauthlib",
+]
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

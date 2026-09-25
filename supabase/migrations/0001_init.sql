@@ -1,0 +1,5 @@
+-- 0001_init.sql
+-- All tables (see AGENTS.md "Data model"):
+-- users, family_contacts, known_payees, emails, bills, favorites, orders,
+-- service_bookings, rides, reminders, reminder_logs, pending_actions,
+-- approvals, activity_log, calls
