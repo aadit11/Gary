@@ -9,32 +9,41 @@ Describe **state**, not history. Update your row when you merge a PR that change
 |---|---|---|---|
 | `voice/` (Twilio routes, bridge, MCP adapter, injection) | Person 1 | — | Everything. Files hold docstrings only. |
 | `scheduler/` | Person 1 | — | Everything. |
-| `mcp_servers/checkins.py` | Person 1 | — | All three tools. |
-| `core/` (db, models, policy, pending, approvals, notify, activity, speech) | Person 2 | — | Everything. `speak()`, `policy.check()`, `pending` not yet implemented. |
-| `webhooks/sms.py` | Person 2 | — | Everything. |
-| `mcp_servers/money.py` | Person 2 | — | All six tools. |
-| `main.py` (app, lifespan, MCP mounts) | Person 2 | Empty FastAPI app starts. | MCP server mounting, lifespan, routers. |
-| `supabase/migrations/` | Person 2 | — | `0001_init.sql` is a comment listing the tables. No schema. |
-| `mcp_servers/orders.py` | Person 3 | — | All seven tools. |
+| `mcp_servers/checkins.py` | Person 1 | Server exists with a stub `get_upcoming_appointments` so the adapter has something to call. | The real three tools. |
+| `core/` (db, models, policy, pending, approvals, notify, activity, speech) | Person 2 | All modules implemented and unit tested. `db.get_client()` falls back to an in-memory fake when `SUPABASE_URL` is unset or `GARY_FAKE_DB=1`. | Phase 2 policy refinements (per-kind limits, scam scoring via Meta API). |
+| `webhooks/sms.py` | Person 2 | `POST /webhooks/sms` parses YES/NO, resolves the newest pending approval for that family phone, replies with TwiML. Tested with the fake db. | Not yet exercised with a real Twilio text (needs a public URL). |
+| `mcp_servers/money.py` | Person 2 | `list_bills_due` reads the `bills` table and speaks amounts and dates. | The other five tools (Phase 2). |
+| `main.py` (app, lifespan, MCP mounts) | Person 2 | All four MCP servers mounted at `/mcp/<name>` with session managers started in the lifespan; verified with an MCP client. SMS router included. `GET /health`. | Voice routes and scheduler startup (Person 1 adds to the lifespan). |
+| `supabase/migrations/` | Person 2 | `0001_init.sql` defines all 15 tables. | **Not yet applied to the Supabase project.** Paste it into the SQL editor, then run `uv run python scripts/seed_demo_user.py`. |
+| `mcp_servers/orders.py` | Person 3 | Server exists with a stub `get_favorite_orders`. | The real seven tools. |
 | `web/` mocks (biller, food, services, rides) | Person 3 | — | Routes return `{}`. Mock-data JSON files are empty arrays. |
 | `google/` (auth, gmail, calendar, ingestion) | Person 4 | — | Everything. |
-| `mcp_servers/mobility.py` | Person 4 | — | All four tools. |
+| `mcp_servers/mobility.py` | Person 4 | Server exists with a stub `get_ride_status`. | The real four tools. |
 | `web/app/dashboard/` | Person 4 | — | Pages render a heading only. |
 
 ## Integration notes
 
 Things another person needs to know to build on your work: signature changes, new env vars, return-shape changes, mount paths. Remove a note once it is reflected in AGENTS.md.
 
-- `mcp_servers/__init__.py` exports an empty `SERVERS` dict. Register your FastMCP instance there once it exists.
+- **Python 3.12 and `mcp<2`.** `mcp` 2.x renamed FastMCP; the repo pins 1.x so `from mcp.server.fastmcp import FastMCP` works as documented. `uv sync` picks 3.12 automatically (3.14 is too new for some deps).
+- **Every tool takes `user_id: str` as its first parameter.** The voice adapter (Person 1) should inject the caller's user id into every function call, so the LLM never has to know it. `DEMO_USER_ID` in `.env` is that id for the demo.
+- **MCP mount paths** are `/mcp/checkins/mcp`, `/mcp/money/mcp`, `/mcp/orders/mcp`, `/mcp/mobility/mcp` (streamable HTTP). `mcp_servers.streamable_http_url(base, name)` builds them. `SERVERS` in `mcp_servers/__init__.py` is the registry.
+- **Tool results are `speak()` JSON strings**: `{"say": ..., "action_id"?: ..., "data"?: {...}}`. The adapter should hand the whole string to Deepgram; the prompt tells the agent to speak only `say` and pass `action_id` to `confirm_*`.
+- **Pending actions**: `pending.create(action_type, user_id, **payload)` in `prepare_*`; `pending.consume(action_id, action_type, user_id)` in `confirm_*`. `consume` raises `PendingActionError` with a speakable `.say`; catch it and `speak(err.say)`.
+- **Policy**: `policy.check(kind, payee, amount, user_id, message_text=None)` returns `Decision(needs_approval, reason, family_name)`. Call it inside every money-moving tool.
+- **Approvals**: `approvals.request(user_id, action, payload, reason, summary=None)` texts the approver. When the family replies, `webhooks/sms.py` resolves it and runs `ACTION_EXECUTORS[action]` (register yours: `ACTION_EXECUTORS["pay_bill"] = fn`). `approvals.register(callback)` is where Person 1 hooks `voice/injection.py` to tell the live call the outcome.
+- **Fake database for tests**: `tests/conftest.py` forces `GARY_FAKE_DB=1` and provides a `demo` fixture with a user, approver, known payees, and bills. Write your tool tests against it; no network needed.
 - `backend/pyproject.toml` lists dependencies by name without pins. Run `uv sync` once and commit the lockfile.
 - `web/package.json` uses `latest` for all packages. Run `npm install` once and commit the lockfile.
 
 ## Known issues and blockers
 
-- None yet.
+- Migration `0001_init.sql` not yet applied to Supabase, so `seed_demo_user.py` and `DEMO_USER_ID` are pending.
+- `ngrok` is not installed on Person 2's machine yet, so the SMS webhook has not been tested with a real text.
 
 ## Changelog
 
 One line per merged PR, newest first. Keep it to what changed, not how.
 
+- 2026-09-25: Person 2 Phase 1: core library, schema, four mounted MCP servers with one stub tool each, SMS approval webhook, seed script, 23 tests.
 - 2026-09-24: Scaffolded the skeleton file structure from AGENTS.md. All files are stubs.
