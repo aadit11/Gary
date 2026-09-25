@@ -17,7 +17,7 @@ Features:
 - **Daily Reminders**: family-scheduled outbound calls (e.g. medication), with confirmation, retries, and family alerts. The morning call includes a briefing.
 - **Booking Transportation**: ride booking with read-back, driver details, family trip alerts, rides suggested for calendar appointments.
 
-This is a hackathon build. All third-party services (biller, restaurants, home services, rides) are **mocks** served by `web/`. Never integrate real payment, banking, DoorDash, or Uber APIs.
+This is a hackathon build. The biller and home-services providers are **mocks** served by `web/`. Food ordering and rides run on **REAL's web clones** (DashDish for DoorDash, Udriver for Uber) operated by a browser agent in `backend/browser_agent/` (Muse Spark on the Meta Model API deciding each step). Never integrate real payment, banking, DoorDash, or Uber APIs.
 
 ## Architecture
 
@@ -86,6 +86,11 @@ Flows:
 │   │   └── mobility.py              # Vertical 4 (Person 4)
 │   ├── clients/
 │   │   └── mock_services.py         # HTTP client for web/ mock APIs (owners add their own functions)
+│   ├── browser_agent/               # Muse Spark + REAL SDK: drives DashDish / Udriver in the background
+│   │   ├── muse.py                  # Meta Model API client (OpenAI-compatible, reasoning_effort)
+│   │   ├── agent.py                 # observation -> next action (axtree + screenshot prompt)
+│   │   ├── tasks.py                 # FreeformCloneTask: any goal on a REAL clone; per-site flow hints
+│   │   └── runner.py                # BrowserJobRunner: one worker thread, submit()/run_now()
 │   ├── scheduler/                   # OWNER: Person 1
 │   │   ├── __init__.py
 │   │   └── jobs.py                  # due reminders, morning briefings, retries
@@ -114,17 +119,13 @@ Flows:
     │   │   └── approvals/page.tsx   # approval history
     │   ├── mock/
     │   │   ├── biller/page.tsx
-    │   │   ├── food/page.tsx
-    │   │   ├── services/page.tsx
-    │   │   └── rides/page.tsx
+    │   │   └── services/page.tsx
     │   └── api/mock/
-    │       ├── biller/route.ts
-    │       ├── food/route.ts
-    │       ├── services/route.ts
-    │       └── rides/route.ts
+    │       ├── biller/{bills,pay}/route.ts
+    │       └── services/{search,bookings}/route.ts
     └── lib/
         ├── supabase.ts
-        └── mock-data/               # static JSON: menus, providers, drivers
+        └── mock-data/               # static JSON: bills, providers
 ```
 
 ## Ownership
@@ -243,9 +244,13 @@ Mocks are simple and mostly stateless; the backend database is the source of tru
 | Service | Endpoints |
 |---|---|
 | Biller | `GET /api/mock/biller/bills`, `POST /api/mock/biller/pay` → `{confirmation_id}` |
-| Food | `GET /api/mock/food/search?q=`, `POST /api/mock/food/orders` → `{order_id, eta_minutes, total}` |
-| Services | `GET /api/mock/services/search?category=`, `POST /api/mock/services/bookings` → `{booking_id, provider, time}` |
-| Rides | `POST /api/mock/rides/quote`, `POST /api/mock/rides/book` → `{ride_id, driver, car, plate, eta_minutes}`, `GET /api/mock/rides/{id}` |
+| Food | **REAL DashDish clone** via `browser_agent` (no API; see below) |
+| Services | `GET /api/mock/services/search?category=` (or `?q=my sink is leaking`), `POST /api/mock/services/bookings` → `{booking_id, provider, time}` |
+| Rides | **REAL Udriver clone** via `browser_agent` (no API; see below) |
+
+## Browser agent (food and rides)
+
+REAL's clones have no API, so orders and rides are placed by a browser agent: `BrowserJobRunner.submit(site, goal, user_id, on_done)` runs Muse Spark against the clone on a background thread and calls back with a `BrowserJob` (status, result_text like "DONE: Ordered ..., total $21.77", steps, seconds). A DashDish order takes about 50 to 80 seconds, so tools must never wait on it: `confirm_*` says "I'm placing that now" and the callback texts the family and injects the result into the live call. Measure with `uv run python scripts/run_browser_task.py dashdish "..."`.
 
 ## Environment variables (`.env.example`)
 
@@ -267,8 +272,9 @@ GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REFRESH_TOKEN=
 
-# Optional: Muse Spark for backend reasoning
+# Meta Model API (Muse Spark) for the browser agent
 META_API_KEY=
+BROWSER_HEADLESS=false      # show the Chromium window during the demo
 
 # App
 PUBLIC_BASE_URL=            # public backend URL (ngrok or host) for Twilio webhooks

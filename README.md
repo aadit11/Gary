@@ -13,7 +13,7 @@ A phone-based voice assistant for older adults. The user calls a regular phone n
 | Node.js 20+ | The `web/` Next.js app (mock services and dashboard). |
 | [ngrok](https://ngrok.com/) | Gives your laptop a public URL so Twilio can reach it. Free account required. |
 
-Accounts: Twilio (a phone number with voice and SMS), Deepgram (API key), Supabase (a project). Google credentials are optional until the Gmail and Calendar work lands.
+Accounts: Twilio (a phone number with voice and SMS), Deepgram (API key), Supabase (a project), Meta Model API (Muse Spark key from dev.meta.ai, for the browser agent). Google credentials are optional until the Gmail and Calendar work lands.
 
 ## Setup
 
@@ -25,6 +25,7 @@ git clone https://github.com/aadit11/Gary.git
 cd Gary
 cp .env.example .env          # then fill it in, see below
 cd backend && uv sync         # installs Python 3.12 and all dependencies
+uv run playwright install chromium   # browser for the DashDish / Udriver agent
 cd ../web && npm install
 ngrok config add-authtoken <your-token>
 ```
@@ -39,6 +40,7 @@ git clone https://github.com/aadit11/Gary.git
 cd Gary
 Copy-Item .env.example .env   # then fill it in, see below
 cd backend; uv sync
+uv run playwright install chromium
 cd ..\web; npm install
 ngrok config add-authtoken <your-token>
 ```
@@ -56,6 +58,9 @@ The file lives at the repo root. Both `backend/` and `web/` read it.
 | `DEEPGRAM_API_KEY` | Deepgram console, API Keys | |
 | `SUPABASE_URL` | Supabase, Project Settings, Data API, "Project URL" | Just `https://xxxx.supabase.co`. No `/rest/v1` on the end. |
 | `SUPABASE_SERVICE_KEY` | Same page, the **secret** / service_role key | Never the publishable (anon) key. Never commit it. |
+| `SUPABASE_ANON_KEY` | Same page, the **publishable** / anon key | Used only by the web dashboard in the browser. |
+| `META_API_KEY` | dev.meta.ai | Muse Spark, the model that operates the DashDish and Udriver clones. |
+| `BROWSER_HEADLESS` | `false` for the demo | Shows the Chromium window while the agent orders. |
 | `PUBLIC_BASE_URL` | Your ngrok URL once it's running | e.g. `https://abc123.ngrok-free.dev`. Changes every ngrok restart on the free plan. |
 | `MOCK_SERVICES_BASE_URL` | Where `web/` is running | `http://localhost:3000` locally. |
 | `DEMO_USER_ID` | Printed by the seed script (below) | |
@@ -132,6 +137,16 @@ Mock services and the family dashboard are at `http://localhost:3000`.
 - **Family approval**: on a call, ask to send $500 to someone new. The family phone gets a WhatsApp message. Reply YES or NO and the agent tells the caller the answer in the same call.
 
 The backend terminal prints the call transcript as it happens.
+
+### Browser agent (food orders and rides)
+
+Food and rides are placed on REAL's DashDish and Udriver clones by Muse Spark driving a real browser. Try one from `backend/`:
+
+```bash
+uv run python scripts/run_browser_task.py dashdish "Order one Classic Cheeseburger from Souvla for delivery and place the order." --headed
+```
+
+It prints every step, the wall-clock time, and the agent's final message. A DashDish order takes about 50 to 80 seconds. `--no-screenshot` sends only the accessibility tree and is faster.
 
 ## Testing
 

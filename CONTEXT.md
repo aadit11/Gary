@@ -16,10 +16,10 @@ Describe **state**, not history. Update your row when you merge a PR that change
 | `main.py` (app, lifespan, MCP mounts) | Person 2 | All four MCP servers mounted at `/mcp/<name>` with session managers started in the lifespan; verified with an MCP client. SMS router included. `GET /health`. | Voice routes and scheduler startup (Person 1 adds to the lifespan). |
 | `supabase/migrations/` | Person 2 | `0001_init.sql` defines all 15 tables. | Applied to the Supabase project (without RLS; backend uses the secret key, dashboard can use the publishable key). Seeded with the demo user. |
 | `mcp_servers/orders.py` | Person 3 | Server exists with a stub `get_favorite_orders`. | The real seven tools. |
-| `web/` mocks (biller, food, services, rides) | Person 3 | — | Routes return `{}`. Mock-data JSON files are empty arrays. |
+| `browser_agent/` (Muse Spark + REAL SDK) | Person 3 (built 2026-09-25) | `BrowserJobRunner` places a DashDish order from a plain-language goal end to end. Three of three runs succeeded: headed+screenshot 78.5 s / 13 steps, headless+screenshot 66.3 s / 13 steps, headless axtree-only 49.4 s / 11 steps. Runner starts in the lifespan (`app.state.browser_runner`). | Udriver run not yet measured. Not yet wired to `confirm_order` / `confirm_ride` (Phase 2). |
+| `web/` (mocks + dashboard) | Person 3 (dashboard pages: Person 4) | Biller and home-services mock APIs and pages; dashboard activity, approvals, and reminders pages read Supabase live; reminder form inserts rows. Food and rides mocks removed (REAL clones). TypeScript clean. | Vercel deploy. Dashboard shows a "not configured" notice until `SUPABASE_ANON_KEY` is in the root `.env`. |
 | `google/` (auth, gmail, calendar, ingestion) | Person 4 | — | Everything. |
 | `mcp_servers/mobility.py` | Person 4 | Server exists with a stub `get_ride_status`. | The real four tools. |
-| `web/app/dashboard/` | Person 4 | — | Pages render a heading only. |
 
 ## Integration notes
 
@@ -38,12 +38,17 @@ Things another person needs to know to build on your work: signature changes, ne
 - **Live-call injection**: `voice.bridge.ACTIVE_SESSIONS[user_id]` is the live session; `voice/injection.py` is registered with `approvals.register()` and speaks the family's decision with `InjectAgentMessage` (`behavior: interrupt`).
 - **Outbound calls**: `voice.twilio_routes.place_outbound_call(user_id, reason, reminder_id=None)`. Twilio fetches `/voice/outbound-twiml?...` which returns the same stream TwiML.
 - **Twilio number webhooks** (run `uv run python scripts/set_twilio_webhooks.py` after every ngrok restart): voice -> `PUBLIC_BASE_URL/voice/incoming`, SMS -> `PUBLIC_BASE_URL/webhooks/sms`. WhatsApp sandbox inbound URL is set in the console.
+- **Browser agent**: `from browser_agent.runner import BrowserJobRunner`; `app.state.browser_runner.submit(site, goal, user_id=..., on_done=fn)` where site is `dashdish` or `udriver`. `on_done` runs on the worker thread; use `asyncio.run_coroutine_threadsafe` to touch the call loop (see `voice/injection.py`). Goals are plain English; `browser_agent/tasks.py` appends a short per-site flow hint. `MUSE_REASONING_EFFORT=low` (a reasoning model; `minimal` is faster but sloppier). `BROWSER_USE_SCREENSHOT=false` is ~25% faster.
+- **REAL clone facts**: DashDish checkout uses the clone's own saved address and card (Foster City, Visa ...5097); do not ask the agent to change them. Udriver only accepts pickup/dropoff from its own place list (substring search); pick places that exist there.
+- **Web env**: `web/next.config.mjs` reads the repo-root `.env` and exposes `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `DEMO_USER_ID` as `NEXT_PUBLIC_*`. On Vercel set the `NEXT_PUBLIC_*` vars directly.
 - **Fake database for tests**: `tests/conftest.py` forces `GARY_FAKE_DB=1` and provides a `demo` fixture with a user, approver, known payees, and bills. Write your tool tests against it; no network needed.
 - `backend/pyproject.toml` lists dependencies by name without pins. Run `uv sync` once and commit the lockfile.
 - `web/package.json` uses `latest` for all packages. Run `npm install` once and commit the lockfile.
 
 ## Known issues and blockers
 
+- `SUPABASE_ANON_KEY` (publishable key) is not yet in the root `.env`, so dashboard pages render an empty-state notice.
+- The browser agent's DashDish total varied between runs ($21.77 vs $23.37) because it sometimes picks a different size option; the read-back should quote the item, not a precise total, until the agent reports it.
 - **SMS is blocked on our Twilio number** (carrier error 30034: local 10DLC number without A2P registration; registration takes days). Family messages go over the **Twilio WhatsApp sandbox** instead (`FAMILY_CHANNEL=whatsapp`). Any phone that should receive approvals must first send `join halfway-rate` on WhatsApp to +1 415 523 8886. Current demo family phone: +1 315 480 4465.
 - The ngrok URL changes on every restart (free plan). When it does: update `PUBLIC_BASE_URL` in `.env`, restart the backend, run `scripts/set_twilio_webhooks.py`, and update the WhatsApp sandbox "When a message comes in" URL in the Twilio console (no API for that one).
 
@@ -51,6 +56,7 @@ Things another person needs to know to build on your work: signature changes, ne
 
 One line per merged PR, newest first. Keep it to what changed, not how.
 
+- 2026-09-25: Browser agent (Muse Spark on Meta Model API + REAL SDK) places a DashDish order end to end; 3/3 runs, 49 to 79 s. Web app reduced to biller + services mocks and a live dashboard.
 - 2026-09-25: README rewritten (macOS/Windows setup, run, test, troubleshooting); helper scripts `set_twilio_webhooks.py` and `place_reminder_call.py`.
 - 2026-09-25: Outbound reminder call verified on a real phone end to end (Twilio -> bridge -> Deepgram -> speech both ways).
 - 2026-09-25: Voice bridge, MCP adapter, prompts, turn-taking settings, injection, outbound calls, minimal scheduler. 49 tests.
