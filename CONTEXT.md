@@ -7,7 +7,7 @@ Describe **state**, not history. Update your row when you merge a PR that change
 
 | Area | Owner | Working end to end | Stubbed / not started |
 |---|---|---|---|
-| `voice/` (Twilio routes, bridge, MCP adapter, injection) | Person 1 (built by Person 2 with agent help, 2026-09-25) | Inbound TwiML, Twilio<->Deepgram bridge (mulaw 8k, Flux listen, gpt-4o-mini think, Deepgram v2 speak), barge-in `clear`, function calls routed to MCP tools, KeepAlive, approval injection into live calls, outbound TwiML + `place_outbound_call()`. Verified with a fake Twilio client: Deepgram speaks the greeting. | Real phone-call test, morning briefing flow, prompt tuning after listening to real calls. |
+| `voice/` (Twilio routes, bridge, MCP adapter, injection) | Person 1 (built by Person 2 with agent help, 2026-09-25) | Inbound TwiML, Twilio<->Deepgram bridge (mulaw 8k, Flux listen, gpt-4o-mini think, Deepgram v2 speak), barge-in `clear`, function calls routed to MCP tools, KeepAlive, approval injection into live calls, outbound TwiML + `place_outbound_call()`. **Outbound reminder call verified on a real phone** (27 s: greeting, reminder read, user confirmed, agent responded). | Inbound call test, `confirm_reminder` tool (the reminder prompt tells the agent to call it but checkins.py only has a stub tool yet), morning briefing flow, prompt tuning. |
 | `scheduler/` | Person 1 | APScheduler runs `run_due_reminders()` every 60 s: matches active reminders to the current minute in the user's timezone, logs to `reminder_logs`, places the call. Only starts when `PUBLIC_BASE_URL` is set. | Morning briefing job, retries, family alert when unconfirmed. |
 | `mcp_servers/checkins.py` | Person 1 | Server exists with a stub `get_upcoming_appointments` so the adapter has something to call. | The real three tools. |
 | `core/` (db, models, policy, pending, approvals, notify, activity, speech) | Person 2 | All modules implemented and unit tested. `db.get_client()` falls back to an in-memory fake when `SUPABASE_URL` is unset or `GARY_FAKE_DB=1`. | Phase 2 policy refinements (per-kind limits, scam scoring via Meta API). |
@@ -51,7 +51,8 @@ Things another person needs to know to build on your work: signature changes, ne
 
 One line per merged PR, newest first. Keep it to what changed, not how.
 
-- 2026-09-25: Voice bridge, MCP adapter, prompts, turn-taking settings, injection, outbound calls, minimal scheduler. 49 tests. Deepgram greeting verified with a fake Twilio client; real call pending.
+- 2026-09-25: Outbound reminder call verified on a real phone end to end (Twilio -> bridge -> Deepgram -> speech both ways).
+- 2026-09-25: Voice bridge, MCP adapter, prompts, turn-taking settings, injection, outbound calls, minimal scheduler. 49 tests.
 - 2026-09-25: Family approval request delivered live over WhatsApp sandbox; reply loop pending a real YES/NO. SMS blocked by carrier registration; `FAMILY_CHANNEL` switch added.
 - 2026-09-25: Schema applied to Supabase and demo user seeded; `DEMO_USER_ID` set in Person 2's .env.
 - 2026-09-25: Person 2 Phase 1: core library, schema, four mounted MCP servers with one stub tool each, SMS approval webhook, seed script, 23 tests.
