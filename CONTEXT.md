@@ -14,7 +14,7 @@ Describe **state**, not history. Update your row when you merge a PR that change
 | `webhooks/sms.py` | Person 2 | `POST /webhooks/sms` parses YES/NO, resolves the newest pending approval for that family phone, replies with TwiML. Tested with the fake db. | Not yet exercised with a real Twilio text (needs a public URL). |
 | `mcp_servers/money.py` | Person 2 | `list_bills_due` reads the `bills` table and speaks amounts and dates. | The other five tools (Phase 2). |
 | `main.py` (app, lifespan, MCP mounts) | Person 2 | All four MCP servers mounted at `/mcp/<name>` with session managers started in the lifespan; verified with an MCP client. SMS router included. `GET /health`. | Voice routes and scheduler startup (Person 1 adds to the lifespan). |
-| `supabase/migrations/` | Person 2 | `0001_init.sql` defines all 15 tables. | **Not yet applied to the Supabase project.** Paste it into the SQL editor, then run `uv run python scripts/seed_demo_user.py`. |
+| `supabase/migrations/` | Person 2 | `0001_init.sql` defines all 15 tables. | Applied to the Supabase project (without RLS; backend uses the secret key, dashboard can use the publishable key). Seeded with the demo user. |
 | `mcp_servers/orders.py` | Person 3 | Server exists with a stub `get_favorite_orders`. | The real seven tools. |
 | `web/` mocks (biller, food, services, rides) | Person 3 | — | Routes return `{}`. Mock-data JSON files are empty arrays. |
 | `google/` (auth, gmail, calendar, ingestion) | Person 4 | — | Everything. |
@@ -38,12 +38,13 @@ Things another person needs to know to build on your work: signature changes, ne
 
 ## Known issues and blockers
 
-- Migration `0001_init.sql` not yet applied to Supabase, so `seed_demo_user.py` and `DEMO_USER_ID` are pending.
+- The seeded family contact phone is a placeholder (+1 555 010 0002). Replace it in `scripts/seed_demo_user.py` and the `family_contacts` row with the real demo family phone before testing SMS approvals.
 - `ngrok` is not installed on Person 2's machine yet, so the SMS webhook has not been tested with a real text.
 
 ## Changelog
 
 One line per merged PR, newest first. Keep it to what changed, not how.
 
+- 2026-09-25: Schema applied to Supabase and demo user seeded; `DEMO_USER_ID` set in Person 2's .env.
 - 2026-09-25: Person 2 Phase 1: core library, schema, four mounted MCP servers with one stub tool each, SMS approval webhook, seed script, 23 tests.
 - 2026-09-24: Scaffolded the skeleton file structure from AGENTS.md. All files are stubs.
