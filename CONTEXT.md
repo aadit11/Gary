@@ -37,7 +37,7 @@ Things another person needs to know to build on your work: signature changes, ne
 - **MCP adapter transport**: `MCPAdapter()` defaults to in-process sessions over the same FastMCP objects (no loopback HTTP; uvicorn isn't listening yet during lifespan startup). `MCPAdapter(transport="http")` uses real streamable-HTTP sessions. Schemas are identical either way.
 - **Live-call injection**: `voice.bridge.ACTIVE_SESSIONS[user_id]` is the live session; `voice/injection.py` is registered with `approvals.register()` and speaks the family's decision with `InjectAgentMessage` (`behavior: interrupt`).
 - **Outbound calls**: `voice.twilio_routes.place_outbound_call(user_id, reason, reminder_id=None)`. Twilio fetches `/voice/outbound-twiml?...` which returns the same stream TwiML.
-- **Twilio number webhooks** (set via REST, must be re-pointed when ngrok restarts): voice -> `PUBLIC_BASE_URL/voice/incoming`, SMS -> `PUBLIC_BASE_URL/webhooks/sms`. WhatsApp sandbox inbound URL is set in the console.
+- **Twilio number webhooks** (run `uv run python scripts/set_twilio_webhooks.py` after every ngrok restart): voice -> `PUBLIC_BASE_URL/voice/incoming`, SMS -> `PUBLIC_BASE_URL/webhooks/sms`. WhatsApp sandbox inbound URL is set in the console.
 - **Fake database for tests**: `tests/conftest.py` forces `GARY_FAKE_DB=1` and provides a `demo` fixture with a user, approver, known payees, and bills. Write your tool tests against it; no network needed.
 - `backend/pyproject.toml` lists dependencies by name without pins. Run `uv sync` once and commit the lockfile.
 - `web/package.json` uses `latest` for all packages. Run `npm install` once and commit the lockfile.
@@ -45,12 +45,13 @@ Things another person needs to know to build on your work: signature changes, ne
 ## Known issues and blockers
 
 - **SMS is blocked on our Twilio number** (carrier error 30034: local 10DLC number without A2P registration; registration takes days). Family messages go over the **Twilio WhatsApp sandbox** instead (`FAMILY_CHANNEL=whatsapp`). Any phone that should receive approvals must first send `join halfway-rate` on WhatsApp to +1 415 523 8886. Current demo family phone: +1 315 480 4465.
-- The ngrok URL changes on every restart (free plan). When it does: update `PUBLIC_BASE_URL` in `.env`, the WhatsApp sandbox "When a message comes in" URL in the Twilio console, and the number's SMS/voice webhooks.
+- The ngrok URL changes on every restart (free plan). When it does: update `PUBLIC_BASE_URL` in `.env`, restart the backend, run `scripts/set_twilio_webhooks.py`, and update the WhatsApp sandbox "When a message comes in" URL in the Twilio console (no API for that one).
 
 ## Changelog
 
 One line per merged PR, newest first. Keep it to what changed, not how.
 
+- 2026-09-25: README rewritten (macOS/Windows setup, run, test, troubleshooting); helper scripts `set_twilio_webhooks.py` and `place_reminder_call.py`.
 - 2026-09-25: Outbound reminder call verified on a real phone end to end (Twilio -> bridge -> Deepgram -> speech both ways).
 - 2026-09-25: Voice bridge, MCP adapter, prompts, turn-taking settings, injection, outbound calls, minimal scheduler. 49 tests.
 - 2026-09-25: Family approval request delivered live over WhatsApp sandbox; reply loop pending a real YES/NO. SMS blocked by carrier registration; `FAMILY_CHANNEL` switch added.
