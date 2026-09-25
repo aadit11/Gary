@@ -18,6 +18,7 @@ from webhooks.sms import router as sms_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("gary")
+logging.getLogger("httpx").setLevel(logging.WARNING)  # request URLs carry user ids
 
 _mcp_apps = {name: server.streamable_http_app() for name, server in SERVERS.items()}
 

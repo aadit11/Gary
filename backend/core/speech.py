@@ -32,7 +32,7 @@ def date_str(value: date | datetime | str | None) -> str:
         return ""
     if isinstance(value, str):
         try:
-            value = datetime.fromisoformat(value)
+            value = date.fromisoformat(value) if len(value) == 10 else datetime.fromisoformat(value)
         except ValueError:
             return value
     if isinstance(value, datetime):
