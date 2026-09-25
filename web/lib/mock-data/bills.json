@@ -1,0 +1,5 @@
+[
+  {"id": "bill-electric", "payee": "City Electric", "amount": 84.20, "due_date": "2026-10-02", "account": "****4471"},
+  {"id": "bill-pharmacy", "payee": "Sunrise Pharmacy", "amount": 23.50, "due_date": "2026-10-05", "account": "****9020"},
+  {"id": "bill-water", "payee": "Springfield Water", "amount": 41.10, "due_date": "2026-10-12", "account": "****1183"}
+]

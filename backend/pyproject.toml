@@ -17,6 +17,7 @@ dependencies = [
     "google-api-python-client",
     "google-auth",
     "google-auth-oauthlib",
+    "agisdk>=0.3.5",
 ]
 
 [dependency-groups]

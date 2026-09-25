@@ -51,6 +51,19 @@ class Settings(BaseSettings):
     deepgram_voice: str = "flux-alexis-en"        # Deepgram speak model (v2)
     port: int = 8000                              # local port; the MCP adapter connects over loopback
 
+    # Browser agent (Muse Spark on Meta Model API driving REAL clones)
+    meta_api_base: str = "https://api.meta.ai/v1"
+    muse_model: str = "muse-spark-1.3"
+    muse_reasoning_effort: str = "low"           # minimal | low | medium | high (Muse Spark is a reasoning model)
+    muse_max_tokens: int = 3000
+    browser_headless: bool = True
+    browser_max_steps: int = 25
+    browser_timeout_s: int = 180
+    browser_use_screenshot: bool = True
+    browser_video_dir: str = ""
+    real_dashdish_url: str = "https://evals-dashdish.vercel.app"
+    real_udriver_url: str = "https://evals-udriver.vercel.app"
+
     # Set GARY_FAKE_DB=1 to force the in-memory database (tests, teammates without creds).
     gary_fake_db: bool = False
 

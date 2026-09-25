@@ -14,6 +14,7 @@ from fastapi import FastAPI
 
 from config import settings
 from mcp_servers import SERVERS, mount_path
+from browser_agent.runner import BrowserJobRunner
 from core import approvals
 from scheduler.jobs import start_scheduler
 from voice import injection
@@ -39,9 +40,13 @@ async def lifespan(app: FastAPI):
         app.state.adapter = adapter
         approvals.register(injection.on_approval_resolved)
         scheduler = start_scheduler() if settings.public_base_url else None
+        browser_runner = BrowserJobRunner()
+        browser_runner.start()  # worker thread only; no browser opens until a job is submitted
+        app.state.browser_runner = browser_runner
         try:
             yield
         finally:
+            browser_runner.stop()
             if scheduler:
                 scheduler.shutdown(wait=False)
             await adapter.stop()
@@ -62,4 +67,5 @@ def health() -> dict:
         "mcp_servers": {name: f"{mount_path(name)}/mcp" for name in SERVERS},
         "db": "supabase" if settings.supabase_url and not settings.gary_fake_db else "fake",
         "sms": bool(settings.twilio_account_sid),
+        "browser_agent": {"model": settings.muse_model, "headless": settings.browser_headless, "configured": bool(settings.meta_api_key)},
     }
