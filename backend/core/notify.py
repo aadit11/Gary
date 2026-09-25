@@ -33,18 +33,29 @@ def _twilio():
     return Client(settings.twilio_account_sid, settings.twilio_auth_token)
 
 
-def send_sms(to: str, body: str) -> str:
-    """Send one text. Returns the Twilio message SID, or "" when not configured or on failure."""
+def addresses(to: str) -> tuple[str, str]:
+    """Return (to, from) Twilio addresses for the configured family channel."""
     to = normalize_phone(to)
+    if settings.family_channel.lower() == "whatsapp":
+        return f"whatsapp:{to}", settings.twilio_whatsapp_from
+    return to, settings.twilio_phone_number
+
+
+def send_sms(to: str, body: str) -> str:
+    """Send one message on the family channel (SMS or WhatsApp).
+
+    Returns the Twilio message SID, or "" when not configured or on failure.
+    """
+    to_addr, from_addr = addresses(to)
     client = _twilio()
     if client is None:
-        log.info("SMS (not sent, Twilio not configured) to %s: %s", to, body)
+        log.info("Message (not sent, Twilio not configured) to %s: %s", to_addr, body)
         return ""
     try:
-        msg = client.messages.create(to=to, from_=settings.twilio_phone_number, body=body)
+        msg = client.messages.create(to=to_addr, from_=from_addr, body=body)
         return msg.sid or ""
     except Exception:  # noqa: BLE001
-        log.exception("SMS send failed to %s", to)
+        log.exception("Message send failed to %s", to_addr)
         return ""
 
 

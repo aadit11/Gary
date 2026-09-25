@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     demo_user_id: str = ""
     policy_spending_limit: float = 100.0
 
+    # Family messaging channel: "sms" (needs A2P 10DLC registration on the Twilio number) or
+    # "whatsapp" (Twilio WhatsApp sandbox; family phone must first send the join message).
+    family_channel: str = "sms"
+    twilio_whatsapp_from: str = "whatsapp:+14155238886"  # Twilio's shared sandbox number
+
     # Set GARY_FAKE_DB=1 to force the in-memory database (tests, teammates without creds).
     gary_fake_db: bool = False
 

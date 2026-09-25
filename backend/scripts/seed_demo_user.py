@@ -22,7 +22,7 @@ DEMO = {
         "address": "12 Oak Lane, Springfield",
         "timezone": "America/New_York",
     },
-    "family": {"name": "David", "phone": "+15550100002", "relationship": "son", "can_approve": True},
+    "family": {"name": "David", "phone": "+14089814724", "relationship": "son", "can_approve": True},
     "known_payees": [
         {"name": "City Electric", "kind": "biller"},
         {"name": "Sunrise Pharmacy", "kind": "biller"},
