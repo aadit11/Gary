@@ -33,6 +33,7 @@ class JevResult:
     final_text: str = ""
     error: str = ""
     history: list[dict] = field(default_factory=list)
+    decider: str = ""
 
 
 def _env() -> None:
@@ -74,7 +75,7 @@ def reset_clone_state(site_url: str, task_id: str = "dashdish-1") -> None:
         cdp("Target.closeTarget", targetId=target)
 
 
-def run(site: str, goal: str, max_steps: int | None = None) -> JevResult:
+def run(site: str, goal: str, max_steps: int | None = None, decider: str | None = None) -> JevResult:
     from browser_agent.tasks import goal_with_hints, site_url
 
     _env()
@@ -83,21 +84,33 @@ def run(site: str, goal: str, max_steps: int | None = None) -> JevResult:
 
     jev_model.field_text = _muse_field_text  # used via module attribute inside agent.py
     jev_agent.field_text = _muse_field_text
+    decider = decider or settings.jev_decider
+    if decider != "typesafe":
+        from browser_agent.jev_llm import make_choose
+
+        jev_agent.choose = make_choose(decider)
     if max_steps:
         jev_agent.MAX_STEPS = max_steps
     from jev_ultrafast import Agent
 
     res = JevResult(site=site, goal=goal)
+    res.decider = decider
     url = site_url(site)
     started = time.perf_counter()
     try:
         reset_clone_state(url, f"{site}-1")
         with Agent(url, [goal_with_hints(site, goal)]) as agent:
             state = agent.state
-            for state in agent.run():
-                pass
+            try:
+                for state in agent.run():
+                    pass
+            finally:
+                state = agent.state
+                res.history = list(state.get("history", []))
+                res.steps = len(res.history)
+                page = state.get("page") or {}
+                res.final_url, res.final_text = page.get("url", ""), page.get("text", "")
             res.status = state["status"] if state["status"] in ("done", "blocked") else "failed"
-            res.history = list(state.get("history", []))
             res.steps = len(res.history)
             res.decisions = sum(1 for h in res.history) + (1 if res.status in ("done", "blocked") else 0)
             res.text_calls = sum(1 for h in res.history if h.get("text"))

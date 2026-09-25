@@ -66,7 +66,10 @@ class Settings(BaseSettings):
     typesafe_api_key: str = ""
     typesafe_model: str = "jev-latest"
     jev_cdp_ws: str = ""                  # websocket of a Chromium started with --remote-debugging-port
-    jev_max_steps: int = 30   # True = ask the model to confirm after a full replay (adds ~5-8 s)
+    jev_max_steps: int = 30
+    jev_decider: str = "muse"             # typesafe | muse | openrouter  (who picks operation + element)
+    openrouter_api_key: str = ""
+    openrouter_model: str = "inception/mercury-2.5"   # fast text model used by jev-ultrafast's own demo   # True = ask the model to confirm after a full replay (adds ~5-8 s)
     real_dashdish_url: str = "https://evals-dashdish.vercel.app"
     real_udriver_url: str = "https://evals-udriver.vercel.app"
 

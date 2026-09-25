@@ -65,3 +65,19 @@ One line per merged PR, newest first. Keep it to what changed, not how.
 - 2026-09-25: Schema applied to Supabase and demo user seeded; `DEMO_USER_ID` set in Person 2's .env.
 - 2026-09-25: Person 2 Phase 1: core library, schema, four mounted MCP servers with one stub tool each, SMS approval webhook, seed script, 23 tests.
 - 2026-09-24: Scaffolded the skeleton file structure from AGENTS.md. All files are stubs.
+
+## Experiment: jev-ultrafast (branch `jev-ultrafast`, 2026-09-25)
+
+Goal: see whether Browser Use's jev-ultrafast loop beats our Muse Spark runner on a first-time DashDish order. TypeSafe API keys were paused, so an LLM decider (`browser_agent/jev_llm.py`) reproduces TypeSafe's operation+target contract over the library's own element table; Muse Spark writes typed text. Benchmarks in `backend/data/benchmarks/`.
+
+| Agent | Loop | Decider | Runs | Orders confirmed | Median time | Median decisions |
+|---|---|---|---|---|---|---|
+| muse | ours (REAL SDK, Playwright) | Muse Spark | 3 | **3/3** | 37.3 s | 5 |
+| jev-muse | jev-ultrafast | Muse Spark | 3 | 0/3 | 26.1 s (failed) | 3 to 4 |
+| jev-openrouter | jev-ultrafast | Mercury 2.5 | 3 | 0/3 | 29.1 s (blocked) | 10 |
+
+Why the jev loop fails on DashDish: after typing "Souvla" the text is in the box and the DOM has the four suggestion nodes, but the library's snapshot only lists standard HTML/ARIA controls, so DashDish's div-based result cards (and the restaurant cards on the home page) never appear as clickable elements, and its visible-text reader omits the dropdown. Every decider therefore loops on the search box. Its README lists arbitrary widgets as out of scope. Fixing it means patching the library's `snapshot.js`; not worth it before the demo.
+
+What did transfer: per-decision latency of ~0.4 s (Mercury) to ~1.7 s (Muse, minimal reasoning) on a compact element table, versus ~3 s on our pruned accessibility tree. If we want more speed later, the element-table observation and a constrained one-line decision format are the parts to port into our runner, keeping the REAL SDK's DOM access that does see the cards.
+
+Decision: stay on the Muse Spark runner on `main` (37 s first order, 15 s replay). Branch kept for reference.

@@ -32,11 +32,11 @@ def run_muse(goal):
             "order_id": dashdish_order_confirmed(job.final_text), "claim": job.result_text or job.error}
 
 
-def run_jev(goal):
+def run_jev(goal, decider="muse"):
     from browser_agent import jev_runner
 
-    r = jev_runner.run("dashdish", goal)
-    return {"agent": "jev", "status": r.status, "seconds": r.seconds, "seconds_after_first_obs": r.seconds_after_first_observation,
+    r = jev_runner.run("dashdish", goal, decider=decider)
+    return {"agent": f"jev-{decider}", "status": r.status, "seconds": r.seconds, "seconds_after_first_obs": r.seconds_after_first_observation,
             "steps": r.steps, "decisions": r.decisions, "text_calls": r.text_calls, "final_url": r.final_url,
             "order_id": dashdish_order_confirmed(r.final_text), "claim": r.error or r.status,
             "actions": [h.get("action") for h in r.history]}
@@ -45,10 +45,10 @@ def run_jev(goal):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--trials", type=int, default=3)
-    ap.add_argument("--agents", default="muse,jev")
+    ap.add_argument("--agents", default="muse,jev-muse,jev-openrouter")
     ap.add_argument("--goal", default=GOAL)
     args = ap.parse_args()
-    runners = {"muse": run_muse, "jev": run_jev}
+    runners = {"muse": run_muse, "jev-muse": lambda g: run_jev(g, "muse"), "jev-openrouter": lambda g: run_jev(g, "openrouter"), "jev-typesafe": lambda g: run_jev(g, "typesafe")}
     rows = []
     for name in args.agents.split(","):
         for t in range(1, args.trials + 1):
