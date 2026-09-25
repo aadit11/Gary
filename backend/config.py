@@ -61,7 +61,12 @@ class Settings(BaseSettings):
     browser_timeout_s: int = 180
     browser_use_screenshot: bool = True
     browser_video_dir: str = ""
-    browser_replay_verify: bool = False   # True = ask the model to confirm after a full replay (adds ~5-8 s)
+    browser_replay_verify: bool = False
+    # jev-ultrafast experiment (branch jev-ultrafast): TypeSafe Jev chooses actions, Muse Spark writes text
+    typesafe_api_key: str = ""
+    typesafe_model: str = "jev-latest"
+    jev_cdp_ws: str = ""                  # websocket of a Chromium started with --remote-debugging-port
+    jev_max_steps: int = 30   # True = ask the model to confirm after a full replay (adds ~5-8 s)
     real_dashdish_url: str = "https://evals-dashdish.vercel.app"
     real_udriver_url: str = "https://evals-udriver.vercel.app"
 

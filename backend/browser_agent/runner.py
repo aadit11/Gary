@@ -47,6 +47,7 @@ class BrowserJob:
     replayed_steps: int = 0
     seconds: float = 0.0
     final_url: str = ""
+    final_text: str = ""  # accessibility text of the last page, for independent verification
     actions: list[str] = field(default_factory=list)
     executed: list[dict] = field(default_factory=list)  # {"action", "role", "name", "ok"}
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -238,6 +239,12 @@ class BrowserJobRunner:
                     log.info("job %s step %d: %s%s", job.id, job.steps, action[:140], "" if ok else "  (FAILED, re-planning)")
                     if not ok:
                         break
+            try:
+                from browser_agent.agent import full_text
+
+                job.final_text = full_text(obs) if isinstance(obs, dict) else ""
+            except Exception:  # noqa: BLE001
+                pass
         except Exception as e:  # noqa: BLE001
             log.exception("job %s crashed", job.id)
             job.status, job.error = "failed", f"{type(e).__name__}: {str(e)[:200]}"

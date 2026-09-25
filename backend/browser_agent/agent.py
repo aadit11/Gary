@@ -120,6 +120,17 @@ def flatten_pruned(obs: dict) -> str:
     return text
 
 
+def full_text(obs: dict) -> str:
+    """Whole-page accessibility text (no cap), for verifying outcomes after a run."""
+    try:
+        return flatten_axtree_to_str(obs["axtree_object"], extra_properties=obs.get("extra_element_properties"), filter_with_bid_only=True)
+    except Exception:  # noqa: BLE001
+        try:
+            return flatten_axtree_to_str(obs["axtree_object"])
+        except Exception:  # noqa: BLE001
+            return ""
+
+
 def screenshot_data_url(image: Any) -> str:
     from PIL import Image
 

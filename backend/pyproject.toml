@@ -2,7 +2,7 @@
 name = "gary-backend"
 version = "0.1.0"
 description = "FastAPI backend: Twilio webhooks, Twilio<->Deepgram voice bridge, MCP servers, SMS webhook, scheduler."
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "fastapi",
     "uvicorn[standard]",
@@ -18,6 +18,7 @@ dependencies = [
     "google-auth",
     "google-auth-oauthlib",
     "agisdk>=0.3.5",
+    "jev-ultrafast",
 ]
 
 [dependency-groups]
@@ -27,3 +28,6 @@ dev = ["pytest", "pytest-asyncio"]
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+
+[tool.uv.sources]
+jev-ultrafast = { git = "https://github.com/browser-use/jev-ultrafast.git" }
