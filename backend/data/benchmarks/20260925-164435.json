@@ -1,0 +1,41 @@
+{
+  "goal": "Order one Classic Cheeseburger from Souvla for delivery and place the order.",
+  "rows": [
+    {
+      "agent": "muse",
+      "status": "done",
+      "seconds": 46.3,
+      "steps": 9,
+      "decisions": 5,
+      "final_url": "https://evals-dashdish.vercel.app/checkout",
+      "order_id": "ORD-1790379788180",
+      "claim": "DONE: Ordered one Classic Cheeseburger from Souvla for delivery, order ID ORD-1790379788180-678.",
+      "trial": 1,
+      "confirmed": true
+    },
+    {
+      "agent": "muse",
+      "status": "done",
+      "seconds": 37.3,
+      "steps": 9,
+      "decisions": 5,
+      "final_url": "https://evals-dashdish.vercel.app/checkout",
+      "order_id": "ORD-1790379826459",
+      "claim": "DONE: Ordered one Classic Cheeseburger from Souvla for delivery, order ID ORD-1790379826459-144.",
+      "trial": 2,
+      "confirmed": true
+    },
+    {
+      "agent": "muse",
+      "status": "done",
+      "seconds": 36.7,
+      "steps": 9,
+      "decisions": 5,
+      "final_url": "https://evals-dashdish.vercel.app/checkout",
+      "order_id": "ORD-1790379864313",
+      "claim": "DONE: Ordered one Classic Cheeseburger from Souvla for delivery, order ID ORD-1790379864313-497.",
+      "trial": 3,
+      "confirmed": true
+    }
+  ]
+}
