@@ -161,7 +161,10 @@ class BrowserJobRunner:
         return obs, not err
 
     def _replay(self, env: Any, job: BrowserJob, agent: Any, obs: dict, flow: dict) -> dict:
-        """Replay learned steps; stops at the first failure. Returns the latest obs."""
+        """Replay learned steps; stops at the first failure. Returns the latest obs.
+
+        If every step succeeds and BROWSER_REPLAY_VERIFY is off, the job is marked done with the
+        flow's stored result text and no model call is made."""
         from browser_agent.flows import step_to_action
 
         steps = flow.get("steps") or []
@@ -175,6 +178,11 @@ class BrowserJobRunner:
                 return obs
             job.replayed_steps = i
             agent.record(action, None, "replayed from learned flow")
+        if not settings.browser_replay_verify and flow.get("result_text"):
+            job.status = "done"
+            job.result_text = flow["result_text"]
+            log.info("job %s replay complete; finishing without model verification", job.id)
+            return obs
         agent.note(f"Replayed all {len(steps)} learned steps successfully, including the final confirmation click. Look at the current page: if it shows the order/booking went through, reply with the DONE message immediately as your only action. Do not wait, noop, or click anything unless something is clearly wrong.")
         return obs
 
@@ -248,7 +256,10 @@ class BrowserJobRunner:
             if not complete:
                 log.warning("job %s: flow not saved (a step has no role/name)", job.id)
             if complete and steps:
-                p = self._flows.save(job.site, job.flow_key, job.goal, steps, job.result_text)
+                import re as _re
+
+                result = _re.sub(r",?\s*order id\s*\S+", "", job.result_text, flags=_re.I).strip()
+                p = self._flows.save(job.site, job.flow_key, job.goal, steps, result)
                 log.info("job %s: learned flow saved (%d steps) -> %s", job.id, len(steps), p)
 
         log.info("job %s %s in %.1fs / %d steps / %d model calls / %d replayed: %s", job.id, job.status, job.seconds,

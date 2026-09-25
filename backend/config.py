@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     browser_timeout_s: int = 180
     browser_use_screenshot: bool = True
     browser_video_dir: str = ""
+    browser_replay_verify: bool = False   # True = ask the model to confirm after a full replay (adds ~5-8 s)
     real_dashdish_url: str = "https://evals-dashdish.vercel.app"
     real_udriver_url: str = "https://evals-udriver.vercel.app"
 
