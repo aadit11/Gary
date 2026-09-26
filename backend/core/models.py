@@ -32,6 +32,18 @@ class KnownPayee(BaseModel):
     kind: Literal["biller", "person", "merchant"] = "biller"
 
 
+class Email(BaseModel):
+    id: str
+    user_id: str
+    gmail_id: str
+    sender: str = ""
+    subject: str = ""
+    snippet: str = ""
+    received_at: datetime | None = None
+    classification: Literal["bill", "appointment", "scam", "other"] = "other"
+    extracted: dict[str, Any] = Field(default_factory=dict)
+
+
 class Bill(BaseModel):
     id: str
     user_id: str
