@@ -48,6 +48,8 @@ def to_deepgram_function(tool: Any) -> dict:
         "name": tool.name,
         "description": (tool.description or "").strip().split("\n")[0],
         "parameters": {"type": "object", "properties": schema["properties"], "required": schema["required"]},
+        # Wait until the person has finished. A call sent early can be cancelled and leave the line silent.
+        "defer_until_eot": True,
     }
 
 

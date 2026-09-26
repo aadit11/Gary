@@ -59,11 +59,15 @@ async def outbound_twiml(request: Request) -> Response:
     q = request.query_params
     reason = q.get("reason", "reminder")
     user_id = q.get("user_id") or settings.demo_user_id
-    reminder_text = ""
+    reminder_text = q.get("reminder_text") or ""
     if q.get("reminder_id"):
         rows = db.get_client().table("reminders").select("*").eq("id", q["reminder_id"]).limit(1).execute().data
-        reminder_text = rows[0]["message"] if rows else ""
-    return twiml_stream({"user_id": user_id, "reason": reason, "reminder_text": reminder_text})
+        if rows:
+            reminder_text = rows[0]["message"]
+    params = {"user_id": user_id, "reason": reason, "reminder_text": reminder_text}
+    if q.get("reminder_id"):
+        params["reminder_id"] = q["reminder_id"]
+    return twiml_stream(params)
 
 
 @router.websocket("/stream")
@@ -72,7 +76,23 @@ async def stream(ws: WebSocket) -> None:
     await VoiceAgentSession(ws, adapter).run()
 
 
-def place_outbound_call(user_id: str, reason: str, reminder_id: str | None = None) -> str:
+def dial_number(call_sid: str, phone: str) -> bool:
+    """Replace the live call with a dial to the caregiver. False when the number must not be called."""
+    if not call_sid or not notify._can_message(phone):
+        return False
+    twiml = f'<?xml version="1.0" encoding="UTF-8"?><Response><Dial>{escape(phone)}</Dial></Response>'
+    try:
+        from twilio.rest import Client
+
+        Client(settings.twilio_account_sid, settings.twilio_auth_token).calls(call_sid).update(twiml=twiml)
+    except Exception:  # noqa: BLE001
+        log.exception("transfer failed for call %s", call_sid)
+        return False
+    log.info("call %s: transferring to ...%s", call_sid, phone[-4:])
+    return True
+
+
+def place_outbound_call(user_id: str, reason: str, reminder_id: str | None = None, note: str | None = None) -> str:
     """Ask Twilio to call the user and connect them to the bridge. Returns the call SID ('' on failure)."""
     rows = db.get_client().table("users").select("*").eq("id", user_id).limit(1).execute().data
     if not rows:
@@ -82,6 +102,8 @@ def place_outbound_call(user_id: str, reason: str, reminder_id: str | None = Non
     params = {"reason": reason, "user_id": user_id}
     if reminder_id:
         params["reminder_id"] = reminder_id
+    if note:
+        params["reminder_text"] = note
     url = f"{settings.public_base_url.rstrip('/')}/voice/outbound-twiml?{urlencode(params)}"
     try:
         from twilio.rest import Client

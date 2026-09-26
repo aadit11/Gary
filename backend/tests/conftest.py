@@ -4,11 +4,19 @@ import os
 
 os.environ["GARY_FAKE_DB"] = "1"
 os.environ["POLICY_SPENDING_LIMIT"] = "100"
-os.environ.pop("TWILIO_ACCOUNT_SID", None)  # never send real SMS from tests
+# Empty values override .env. Unset variables do not, and approvals tests would text a real number.
+os.environ["TWILIO_ACCOUNT_SID"] = ""
+os.environ["TWILIO_AUTH_TOKEN"] = ""
+os.environ["TWILIO_PHONE_NUMBER"] = ""
 
 import pytest  # noqa: E402
 
+from config import settings  # noqa: E402
 from core import db  # noqa: E402
+
+settings.twilio_account_sid = ""
+settings.twilio_auth_token = ""
+settings.twilio_phone_number = ""
 
 
 @pytest.fixture(autouse=True)
