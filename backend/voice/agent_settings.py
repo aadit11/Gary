@@ -27,7 +27,7 @@ VOICES: dict[str, dict[str, str]] = {
     "en": {
         "language": "en",
         "listen_model": "flux-general-en",
-        "speak_model": "flux-alexis-en",
+        "speak_model": "flux-cole-en",
     }
 }
 
@@ -46,7 +46,7 @@ LISTEN = {
 
 # Which MCP servers each call type can use. Fewer tools = better tool selection.
 SERVERS_BY_REASON: dict[str, list[str]] = {
-    "inbound": ["checkins"],
+    "inbound": ["checkins", "money"],
     "morning_briefing": ["checkins", "money", "mobility"],
     "reminder": ["checkins"],
     "appointment": ["checkins"],

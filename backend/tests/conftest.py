@@ -4,6 +4,8 @@ import os
 
 os.environ["GARY_FAKE_DB"] = "1"
 os.environ["POLICY_SPENDING_LIMIT"] = "100"
+os.environ["POLICY_HARD_LIMIT"] = "20"
+os.environ["MOCK_SERVICES_BASE_URL"] = ""  # payments simulate locally; tests never hit the web app
 # Empty values override .env. Unset variables do not, and approvals tests would text a real number.
 os.environ["TWILIO_ACCOUNT_SID"] = ""
 os.environ["TWILIO_AUTH_TOKEN"] = ""
