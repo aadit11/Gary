@@ -43,7 +43,7 @@ export default function Onboarding({ initial, person, start }: { initial: CarePr
     window.setTimeout(() => {
       setConnector(provider.key, { connected: true });
       setPhase("connected");
-    }, 350);
+    }, 100);
   }
 
   function goTo(index: number) {
