@@ -36,15 +36,19 @@ ACTION_EXECUTORS: dict[str, Callable[[Approval], str]] = {}
 
 
 def _execute(approval: Approval) -> str:
+    """Run the approved action, set approval.outcome, and return the family reply."""
     fn = ACTION_EXECUTORS.get(approval.action)
     if fn is None:
         log.warning("No executor for approved action %s (approval %s)", approval.action, approval.id)
         activity.log_event(approval.user_id, "approval_approved", f"Approved: {approval.action}", {"approval_id": approval.id})
         return "Got it, approved."
     try:
-        return fn(approval)
+        text = fn(approval)
+        approval.outcome = "executed"
+        return text
     except Exception:  # noqa: BLE001
         log.exception("executor failed for %s", approval.action)
+        approval.outcome = "failed"
         return "Approved, but something went wrong carrying it out. We'll follow up."
 
 
@@ -56,10 +60,12 @@ def handle_reply(from_phone: str, body: str) -> str:
         return "Thanks. There's nothing waiting for your approval right now."
 
     if _YES.match(body or ""):
-        resolved = approvals.resolve(approval.id, approved=True)
+        resolved = approvals.resolve(approval.id, approved=True, notify=False)
         if resolved is None:
             return "That request was already handled."
-        return _execute(resolved)
+        text = _execute(resolved)
+        approvals.notify_resolved(resolved)
+        return text
     if _NO.match(body or ""):
         resolved = approvals.resolve(approval.id, approved=False)
         if resolved is None:
