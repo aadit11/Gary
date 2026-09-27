@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { PROVIDERS } from "@/lib/providers";
+import { PlaceList, TextList } from "@/components/ListEditor";
 import Link from "next/link";
 import {
   DIET_OPTIONS,
   EXPENSE_CATEGORIES,
   TIMEZONES,
+  BANKS,
   type CareProfile,
 } from "@/lib/profile";
 
@@ -108,39 +111,76 @@ export default function ProfileEditor({ initial, person, startTab = "settings" }
       {tab === "connections" && (
         <section className="panel">
           <h2>Connections</h2>
-          <p className="lede">Save the places Gary may use. This does not sign in to a bank, DoorDash, or Uber, and it never asks for a password or card.</p>
+          <p className="lede">Save the places Gary may use. The bank and Gmail connections are demo stand-ins; nothing signs in anywhere, and it never asks for a password or card.</p>
           <div className="stack">
             <article className="decision">
               <label className="choice">
-                <input type="checkbox" checked={profile.connectors.doordash.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, doordash: { ...profile.connectors.doordash, connected: e.target.checked } } })} />
-                <strong>DoorDash</strong>
+                <input type="checkbox" checked={profile.connectors.groceries.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, groceries: { ...profile.connectors.groceries, connected: e.target.checked } } })} />
+                <span className="conn-row"><img src={PROVIDERS.find((p) => p.key === "groceries")!.logo} alt="" /><strong>{PROVIDERS.find((p) => p.key === "groceries")!.name}</strong></span>
               </label>
-              {profile.connectors.doordash.connected && (
-                <label>
-                  Usual order
-                  <input value={profile.connectors.doordash.usual} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, doordash: { ...profile.connectors.doordash, usual: e.target.value } } })} placeholder="Chicken soup and tea" />
-                </label>
+              {profile.connectors.groceries.connected && (
+                <div className="fields">
+                  <label>Usual store<input value={profile.connectors.groceries.store} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, groceries: { ...profile.connectors.groceries, store: e.target.value } } })} placeholder="Sunrise Market" /></label>
+                  <div className="group">
+                    Dietary restrictions
+                    <TextList items={profile.connectors.groceries.restrictions} onChange={(restrictions) => setProfile({ ...profile, connectors: { ...profile.connectors, groceries: { ...profile.connectors.groceries, restrictions } } })} placeholder="e.g. shrimp allergy, no desserts" addLabel="Add a restriction" />
+                  </div>
+                </div>
               )}
             </article>
             <article className="decision">
               <label className="choice">
                 <input type="checkbox" checked={profile.connectors.uber.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, uber: { ...profile.connectors.uber, connected: e.target.checked } } })} />
-                <strong>Uber</strong>
+                <span className="conn-row"><img src={PROVIDERS.find((p) => p.key === "uber")!.logo} alt="" /><strong>{PROVIDERS.find((p) => p.key === "uber")!.name}</strong></span>
               </label>
               {profile.connectors.uber.connected && (
-                <>
+                <div className="fields">
                   <label>Home<input value={profile.connectors.uber.home} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, uber: { ...profile.connectors.uber, home: e.target.value } } })} /></label>
-                  <label>Hospital<input value={profile.connectors.uber.hospital} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, uber: { ...profile.connectors.uber, hospital: e.target.value } } })} placeholder="Springfield General" /></label>
-                </>
+                  <div className="group">
+                    Other places
+                    <PlaceList items={profile.connectors.uber.places} onChange={(places) => setProfile({ ...profile, connectors: { ...profile.connectors, uber: { ...profile.connectors.uber, places } } })} />
+                  </div>
+                </div>
               )}
             </article>
             <article className="decision">
               <label className="choice">
-                <input type="checkbox" checked={profile.connectors.groceries.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, groceries: { ...profile.connectors.groceries, connected: e.target.checked } } })} />
-                <strong>Groceries</strong>
+                <input type="checkbox" checked={profile.connectors.doordash.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, doordash: { ...profile.connectors.doordash, connected: e.target.checked } } })} />
+                <span className="conn-row"><img src={PROVIDERS.find((p) => p.key === "doordash")!.logo} alt="" /><strong>{PROVIDERS.find((p) => p.key === "doordash")!.name}</strong></span>
               </label>
-              {profile.connectors.groceries.connected && (
-                <label>Store<input value={profile.connectors.groceries.store} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, groceries: { ...profile.connectors.groceries, store: e.target.value } } })} placeholder="Sunrise Market" /></label>
+              {profile.connectors.doordash.connected && (
+                <div className="fields">
+                  <label>Usual order<input value={profile.connectors.doordash.usual} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, doordash: { ...profile.connectors.doordash, usual: e.target.value } } })} placeholder="Chicken soup and tea" /></label>
+                </div>
+              )}
+            </article>
+            <article className="decision">
+              <label className="choice">
+                <input type="checkbox" checked={profile.connectors.gmail.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, gmail: { ...profile.connectors.gmail, connected: e.target.checked } } })} />
+                <span className="conn-row"><img src={PROVIDERS.find((p) => p.key === "gmail")!.logo} alt="" /><strong>Gmail</strong></span>
+              </label>
+              {profile.connectors.gmail.connected && (
+                <div className="fields">
+                  <label>Email address<input type="email" value={profile.connectors.gmail.address} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, gmail: { ...profile.connectors.gmail, address: e.target.value } } })} placeholder="margaret@gmail.com" /></label>
+                </div>
+              )}
+            </article>
+            <article className="decision">
+              <label className="choice">
+                <input type="checkbox" checked={profile.connectors.bank.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, bank: { ...profile.connectors.bank, connected: e.target.checked } } })} />
+                <span className="conn-row"><img src={BANKS.find((b) => b.id === profile.connectors.bank.institution)?.logo || "/brands/bank.svg"} alt="" /><strong>{BANKS.find((b) => b.id === profile.connectors.bank.institution)?.label || "Bank"}</strong></span>
+              </label>
+              {profile.connectors.bank.connected && (
+                <div className="fields">
+                  <label>Bank
+                    <select value={profile.connectors.bank.institution} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, bank: { ...profile.connectors.bank, institution: e.target.value } } })}>
+                      <option value="">Choose a bank</option>
+                      {BANKS.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+                    </select>
+                  </label>
+                  <label>Checking account, last 4 digits<input inputMode="numeric" maxLength={4} value={profile.connectors.bank.last4} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, bank: { ...profile.connectors.bank, last4: e.target.value.replace(/\D/g, "").slice(0, 4) } } })} placeholder="1234" /></label>
+                  <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>Demo only. No real bank is contacted.</p>
+                </div>
               )}
             </article>
             <article className="decision">

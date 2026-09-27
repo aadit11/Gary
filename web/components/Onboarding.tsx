@@ -2,124 +2,153 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { DIET_OPTIONS, EXPENSE_CATEGORIES, type CareProfile } from "@/lib/profile";
+import { BANKS, type CareProfile } from "@/lib/profile";
+import { PROVIDERS, type Key } from "@/lib/providers";
+import { PlaceList, TextList } from "@/components/ListEditor";
 
-const STEPS = ["Diet", "DoorDash", "Uber", "Groceries", "Bills"];
+type Phase = "idle" | "connecting" | "connected";
 
-export default function Onboarding({ initial }: { initial: CareProfile }) {
+export default function Onboarding({ initial, person, start }: { initial: CareProfile; person: string; start?: string }) {
   const router = useRouter();
-  const [step, setStep] = useState(0);
+  const startIndex = Math.max(0, PROVIDERS.findIndex((p) => p.key === start));
+  const [step, setStep] = useState(startIndex);
   const [profile, setProfile] = useState(initial);
+  const [phase, setPhase] = useState<Phase>(initial.connectors[PROVIDERS[startIndex].key].connected ? "connected" : "idle");
   const [status, setStatus] = useState("");
+  const provider = PROVIDERS[step];
+  const last = step === PROVIDERS.length - 1;
 
-  async function persist(next: CareProfile, done = false) {
-    setStatus("Saving…");
-    const res = await fetch("/api/profile", {
+  function setConnector(key: Key, patch: Record<string, unknown>) {
+    setProfile((p) => ({ ...p, connectors: { ...p.connectors, [key]: { ...p.connectors[key], ...patch } } }));
+  }
+
+  function persist(next: CareProfile, done = false) {
+    // Fire and forget: the screen advances immediately; only a failure is surfaced.
+    fetch("/api/profile", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profile: { ...next, onboarded: done || next.onboarded } }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: "unknown" }));
-      setStatus("Could not save. " + (body.error || ""));
-      return false;
-    }
-    setStatus("");
-    return true;
+      keepalive: true,
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: "unknown" }));
+          setStatus("Could not save. " + (body.error || ""));
+        }
+      })
+      .catch(() => setStatus("Could not save."));
   }
 
-  async function next() {
-    const last = step === STEPS.length - 1;
-    const updated = { ...profile, onboarded: last };
-    if (await persist(updated, last)) {
-      setProfile(updated);
-      if (last) router.push("/dashboard/profile");
-      else setStep(step + 1);
-    }
+  function connect() {
+    setPhase("connecting");
+    window.setTimeout(() => {
+      setConnector(provider.key, { connected: true });
+      setPhase("connected");
+    }, 100);
   }
+
+  function goTo(index: number) {
+    setStep(index);
+    setPhase(profile.connectors[PROVIDERS[index].key].connected ? "connected" : "idle");
+  }
+
+  function skip() {
+    const next = { ...profile, connectors: { ...profile.connectors, [provider.key]: { ...profile.connectors[provider.key], connected: false } } };
+    setProfile(next);
+    persist(next, last);
+    if (last) router.push("/dashboard/profile?tab=connections");
+    else goTo(step + 1);
+  }
+
+  function cont() {
+    persist(profile, last);
+    if (last) router.push("/dashboard/profile?tab=connections");
+    else goTo(step + 1);
+  }
+
+  const c = profile.connectors;
 
   return (
-    <div>
-      <ol className="steps">
-        {STEPS.map((label, index) => (
-          <li key={label} className={index === step ? "on" : ""}>{label}</li>
+    <div className="connect-wrap">
+      <div className="dots" aria-label={`Step ${step + 1} of ${PROVIDERS.length}`}>
+        {PROVIDERS.map((p, i) => (
+          <span key={p.key} className={i === step ? "on" : i < step ? "done" : ""} />
         ))}
-      </ol>
-      {step === 0 && (
-        <section className="panel">
-          <h2>What should Gary keep in mind about food?</h2>
-          <div className="stack">
-            {DIET_OPTIONS.map((option) => (
-              <label key={option.id} className="choice">
-                <input type="checkbox" checked={profile.dietary.includes(option.id)} onChange={(e) => setProfile({ ...profile, dietary: e.target.checked ? [...profile.dietary, option.id] : profile.dietary.filter((id) => id !== option.id) })} />
-                <span>{option.label}</span>
-              </label>
-            ))}
-          </div>
-        </section>
-      )}
-      {step === 1 && (
-        <section className="panel">
-          <h2>DoorDash</h2>
-          <p className="lede">Save a usual order. Gary will not ask for a card or a password.</p>
-          <label className="choice">
-            <input type="checkbox" checked={profile.connectors.doordash.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, doordash: { ...profile.connectors.doordash, connected: e.target.checked } } })} />
-            <span>Gary may help with food orders</span>
-          </label>
-          <label>
-            Usual order
-            <input value={profile.connectors.doordash.usual} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, doordash: { ...profile.connectors.doordash, usual: e.target.value } } })} placeholder="Chicken soup and tea" />
-          </label>
-        </section>
-      )}
-      {step === 2 && (
-        <section className="panel">
-          <h2>Uber places</h2>
-          <p className="lede">Home and the hospital are the two places a ride usually needs.</p>
-          <label className="choice">
-            <input type="checkbox" checked={profile.connectors.uber.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, uber: { ...profile.connectors.uber, connected: e.target.checked } } })} />
-            <span>Save these places for rides</span>
-          </label>
-          <label>Home<input value={profile.connectors.uber.home} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, uber: { ...profile.connectors.uber, home: e.target.value } } })} /></label>
-          <label>Hospital<input value={profile.connectors.uber.hospital} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, uber: { ...profile.connectors.uber, hospital: e.target.value } } })} placeholder="Springfield General" /></label>
-        </section>
-      )}
-      {step === 3 && (
-        <section className="panel">
-          <h2>Groceries</h2>
-          <label className="choice">
-            <input type="checkbox" checked={profile.connectors.groceries.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, groceries: { ...profile.connectors.groceries, connected: e.target.checked } } })} />
-            <span>Save a grocery store</span>
-          </label>
-          <label>Store<input value={profile.connectors.groceries.store} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, groceries: { ...profile.connectors.groceries, store: e.target.value } } })} placeholder="Sunrise Market" /></label>
-        </section>
-      )}
-      {step === 4 && (
-        <section className="panel">
-          <h2>Bills you already expect</h2>
-          <p className="lede">Rent and the other regular bills can remind you on the due day. This is not a bank connection, and nobody has to approve them.</p>
-          <label className="choice">
-            <input type="checkbox" checked={profile.connectors.banking.connected} onChange={(e) => setProfile({ ...profile, notify_expenses: e.target.checked, connectors: { ...profile.connectors, banking: { connected: e.target.checked } } })} />
-            <span>Remind me about these bills</span>
-          </label>
-          <div className="stack">
-            {profile.expenses.map((row) => {
-              const label = EXPENSE_CATEGORIES.find((item) => item.id === row.category)?.label || row.category;
-              return (
-                <label key={row.category} className="choice">
-                  <input type="checkbox" checked={row.active} onChange={(e) => setProfile({ ...profile, expenses: profile.expenses.map((item) => item.category === row.category ? { ...item, active: e.target.checked } : item) })} />
-                  <span>{label}, due on day {row.due_day}</span>
-                </label>
-              );
-            })}
-          </div>
-        </section>
-      )}
-      <div className="row-top">
-        {step > 0 && <button type="button" className="quiet-button" onClick={() => setStep(step - 1)}>Back</button>}
-        <button type="button" onClick={next}>{step === STEPS.length - 1 ? "Finish setup" : "Continue"}</button>
+        <em>{step + 1} of {PROVIDERS.length}</em>
       </div>
-      {status && <p className="muted">{status}</p>}
+
+      <section className="connect-card" key={provider.key}>
+        <div className="logo-pair">
+          <div className="logo-circle gary" aria-hidden="true">G</div>
+          <div className="logo-circle"><img src={provider.key === "bank" ? (BANKS.find((b) => b.id === c.bank.institution)?.logo || provider.logo) : provider.logo} alt={`${provider.name} logo`} /></div>
+        </div>
+        <h2>Gary uses <strong>{provider.name}</strong> to {provider.does} for {person}</h2>
+        <p className="lede">Gary never asks {person} for a password or a card. It only uses what you connect here.</p>
+        <ul>
+          {provider.bullets.map((b) => <li key={b}>{b}</li>)}
+        </ul>
+
+        {phase === "idle" && (
+          <div className="connect-actions">
+            <button type="button" onClick={connect} style={{ background: provider.color }}>Connect {provider.key === "bank" ? "a bank" : provider.name}</button>
+            <button type="button" className="quiet-link" onClick={skip}>Not now</button>
+          </div>
+        )}
+        {phase === "connecting" && (
+          <div className="connect-status"><span className="spinner" aria-hidden="true" /> Connecting to {provider.name}…</div>
+        )}
+        {phase === "connected" && (
+          <>
+            <div className="connect-status"><span className="check" aria-hidden="true">✓</span> {provider.key === "bank" ? (BANKS.find((b) => b.id === c.bank.institution)?.label || "Bank") : provider.name} connected</div>
+            <div className="fields">
+              {provider.key === "doordash" && (
+                <label>Usual order<input value={c.doordash.usual} onChange={(e) => setConnector("doordash", { usual: e.target.value })} placeholder="Chicken soup and tea" /></label>
+              )}
+              {provider.key === "uber" && (
+                <>
+                  <label>Home<input value={c.uber.home} onChange={(e) => setConnector("uber", { home: e.target.value })} /></label>
+                  <div className="group">
+                    Other places {person} goes
+                    <PlaceList items={c.uber.places} onChange={(places) => setConnector("uber", { places })} />
+                  </div>
+                </>
+              )}
+              {provider.key === "gmail" && (
+                <label>Email address<input type="email" value={c.gmail.address} onChange={(e) => setConnector("gmail", { address: e.target.value })} placeholder="margaret@gmail.com" /></label>
+              )}
+              {provider.key === "bank" && (
+                <>
+                  <label>Bank
+                    <select value={c.bank.institution} onChange={(e) => setConnector("bank", { institution: e.target.value })}>
+                      <option value="">Choose a bank</option>
+                      {BANKS.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+                    </select>
+                  </label>
+                  <label>Checking account, last 4 digits<input inputMode="numeric" maxLength={4} value={c.bank.last4} onChange={(e) => setConnector("bank", { last4: e.target.value.replace(/\D/g, "").slice(0, 4) })} placeholder="1234" /></label>
+                  <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>Demo only. No real bank is contacted and no credentials are stored.</p>
+                </>
+              )}
+              {provider.key === "groceries" && (
+                <>
+                  <label>Usual store<input value={c.groceries.store} onChange={(e) => setConnector("groceries", { store: e.target.value })} placeholder="Sunrise Market" /></label>
+                  <div className="group">
+                    Dietary restrictions
+                    <TextList items={c.groceries.restrictions} onChange={(restrictions) => setConnector("groceries", { restrictions })} placeholder="e.g. shrimp allergy, no desserts" addLabel="Add a restriction" />
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="connect-actions">
+              <button type="button" onClick={cont}>{last ? "Finish setup" : "Continue"}</button>
+            </div>
+          </>
+        )}
+      </section>
+
+      <div className="connect-footer">
+        <div>{step > 0 ? <button type="button" className="quiet-button" onClick={() => goTo(step - 1)}>Back</button> : <span />}</div>
+        {status && <p className="muted" style={{ margin: 0 }}>{status}</p>}
+      </div>
     </div>
   );
 }

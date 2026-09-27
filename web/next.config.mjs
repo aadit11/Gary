@@ -25,6 +25,7 @@ const nextConfig = {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || root.SUPABASE_URL || "",
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || root.SUPABASE_ANON_KEY || "",
     NEXT_PUBLIC_DEMO_USER_ID: process.env.NEXT_PUBLIC_DEMO_USER_ID || root.DEMO_USER_ID || "",
+    BACKEND_URL: process.env.BACKEND_URL || root.BACKEND_URL || "http://localhost:8000",  // local backend; PUBLIC_BASE_URL is for Twilio
   },
 };
 export default nextConfig;
