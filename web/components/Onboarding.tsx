@@ -22,20 +22,21 @@ export default function Onboarding({ initial, person, start }: { initial: CarePr
     setProfile((p) => ({ ...p, connectors: { ...p.connectors, [key]: { ...p.connectors[key], ...patch } } }));
   }
 
-  async function persist(next: CareProfile, done = false) {
-    setStatus("Saving…");
-    const res = await fetch("/api/profile", {
+  function persist(next: CareProfile, done = false) {
+    // Fire and forget: the screen advances immediately; only a failure is surfaced.
+    fetch("/api/profile", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profile: { ...next, onboarded: done || next.onboarded } }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: "unknown" }));
-      setStatus("Could not save. " + (body.error || ""));
-      return false;
-    }
-    setStatus("");
-    return true;
+      keepalive: true,
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: "unknown" }));
+          setStatus("Could not save. " + (body.error || ""));
+        }
+      })
+      .catch(() => setStatus("Could not save."));
   }
 
   function connect() {
@@ -51,20 +52,18 @@ export default function Onboarding({ initial, person, start }: { initial: CarePr
     setPhase(profile.connectors[PROVIDERS[index].key].connected ? "connected" : "idle");
   }
 
-  async function skip() {
-    setConnector(provider.key, { connected: false });
+  function skip() {
     const next = { ...profile, connectors: { ...profile.connectors, [provider.key]: { ...profile.connectors[provider.key], connected: false } } };
-    if (await persist(next, last)) {
-      if (last) router.push("/dashboard/profile?tab=connections");
-      else goTo(step + 1);
-    }
+    setProfile(next);
+    persist(next, last);
+    if (last) router.push("/dashboard/profile?tab=connections");
+    else goTo(step + 1);
   }
 
-  async function cont() {
-    if (await persist(profile, last)) {
-      if (last) router.push("/dashboard/profile?tab=connections");
-      else goTo(step + 1);
-    }
+  function cont() {
+    persist(profile, last);
+    if (last) router.push("/dashboard/profile?tab=connections");
+    else goTo(step + 1);
   }
 
   const c = profile.connectors;
