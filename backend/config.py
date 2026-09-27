@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     real_dashdish_url: str = "https://evals-dashdish.vercel.app"
     real_udriver_url: str = "https://evals-udriver.vercel.app"
 
+    # Jev (TypeSafe) decider for the browser agent: picks operation + element in ~0.4 s.
+    jev_api_key: str = ""
+    jev_model: str = "jev-latest"
+    jev_api_url: str = "https://api.typesafe.ai/v1/systemone"
+    browser_decider: str = "llm"           # llm (Claude Haiku etc. via muse_model) | jev
+
     # Set GARY_NO_SCHEDULER=1 to skip the reminder scheduler (console testing).
     gary_no_scheduler: bool = False
 

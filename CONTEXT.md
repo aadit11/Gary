@@ -70,3 +70,16 @@ One line per merged PR, newest first. Keep it to what changed, not how.
 - 2026-09-25: Schema applied to Supabase and demo user seeded; `DEMO_USER_ID` set in Person 2's .env.
 - 2026-09-25: Person 2 Phase 1: core library, schema, four mounted MCP servers with one stub tool each, SMS approval webhook, seed script, 23 tests.
 - 2026-09-24: Scaffolded the skeleton file structure from AGENTS.md. All files are stubs.
+
+## Experiment: Jev decider in our loop (branch `jev-pipeline`, 2026-09-26)
+
+`browser_agent/jev_agent.py` asks TypeSafe's Jev to pick the operation and the element from our own page observation (which sees DashDish's cards, unlike the jev-ultrafast library's reader). A small LLM call writes typed text and the final DONE sentence. Select with `BROWSER_DECIDER=jev` or `decider="jev"` per job. Benchmarks: `scripts/compare_deciders.py`, results in `backend/data/benchmarks/deciders-*.json`.
+
+| Decider | Flow | Verified | Median time | Median decisions |
+|---|---|---|---|---|
+| Claude Haiku 4.5 (llm) | A: first-time order (Souvla cheeseburger) | 3/3 | 34.5 s | 5 |
+| Claude Haiku 4.5 (llm) | B: lookup Wingstop + order "8 piece" on the parked page | 3/3 | 53.0 s | 7 |
+| **Jev** | A: first-time order | **3/3** | **27.1 s** | 11 |
+| **Jev** | B: lookup + parked order | **3/3** | **28.5 s** | 12 |
+
+Jev decides in ~0.4 s, so per-step cost is browser time, not model time; it takes one action per decision (no plans) and never scrolled or looped. Haiku plans several actions per call but each call is 2 to 5 s. Both picked Buffalo Spicy Wings for "8 piece". Jev numbers predate the 1.5 s post-click re-observe added for verification (add ~1.5 s per job). Recommendation: `BROWSER_DECIDER=jev` for the demo, Haiku as fallback if the Jev API is down (the agent falls back to noop then infeasible on request errors).
