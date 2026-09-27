@@ -136,7 +136,7 @@ button:hover { background: #2f3a35; }
 .connect-actions button { min-width: 14rem; }
 .connect-actions .quiet-link { background: none; border: 0; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 0.25rem; }
 .connect-status { display: inline-flex; align-items: center; gap: 0.5rem; justify-content: center; margin: 0.25rem 0 0.75rem; color: var(--accent-deep); font-weight: 600; }
-.spinner { width: 18px; height: 18px; border-radius: 999px; border: 2px solid #d9d2c7; border-top-color: var(--accent-deep); animation: spin 0.8s linear infinite; }
+.spinner { width: 18px; height: 18px; border-radius: 999px; border: 2px solid #d9d2c7; border-top-color: var(--accent-deep); animation: spin 0.5s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .check { width: 22px; height: 22px; border-radius: 999px; background: var(--sage); color: var(--accent-deep); display: grid; place-items: center; font-size: 0.85rem; }
 .connect-footer { display: flex; justify-content: space-between; width: 100%; max-width: 34rem; align-items: center; }
