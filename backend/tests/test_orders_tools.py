@@ -29,7 +29,7 @@ class FakeBrowserRunner:
     """Captures submit() calls; finish() lets a test trigger on_done manually
     instead of actually driving a browser."""
 
-    def submit(self, site, goal, user_id, flow_key=None, on_done=None, on_progress=None, replay=True, lookup=False, park=False, page_name=""):
+    def submit(self, site, goal, user_id, flow_key=None, on_done=None, on_progress=None, replay=True, lookup=False, park=False, page_name="", park_when="", **_kw):
         self.submitted.append({"site": site, "goal": goal, "user_id": user_id, "flow_key": flow_key, "lookup": lookup})
         self._last_on_done = on_done
         self.on_progress = on_progress
@@ -246,7 +246,7 @@ def test_confirm_order_cannot_be_reused(demo, fake_runner):
 
 
 @pytest.mark.asyncio
-async def test_confirm_order_speaks_result_into_live_call(demo, fake_runner):
+async def test_confirm_order_speaks_result_into_live_call(demo, fake_runner, monkeypatch):
     """Runs inside a real event loop (asyncio_mode=auto), so confirm_order can capture it
     and the on_done callback can hop back onto it with run_coroutine_threadsafe."""
     from voice.bridge import ACTIVE_SESSIONS
@@ -270,15 +270,21 @@ async def test_confirm_order_speaks_result_into_live_call(demo, fake_runner):
         _mark_open(demo["user_id"])
         prepared = json.loads(orders.prepare_order(demo["user_id"], restaurant="Panera Bread", item="tomato soup"))
         orders.confirm_order(demo["user_id"], prepared["action_id"])
-        fake_runner.on_progress("I am looking through the DoorDash menu for soup.")
+        # Progress lines are fixed reassurances on a timer, never the model's reasoning.
+        fake_runner.on_progress("I am looking through the DoorDash menu for soup.")  # too early: silent
+        assert not session.injected
+        real_monotonic = orders.time.monotonic
+        monkeypatch.setattr(orders.time, "monotonic", lambda: real_monotonic() + 13)
+        fake_runner.on_progress("I need to analyze the current situation:")
+        monkeypatch.setattr(orders.time, "monotonic", real_monotonic)
         session.order_updates_paused = True
         fake_runner.on_progress("The caller changed the subject, so this must not be spoken.")
         session.order_updates_paused = False
         await asyncio.sleep(0.05)
         fake_runner.finish(FakeJob(status="done"))
         await asyncio.sleep(0.05)  # let the loop process the scheduled inject()
-        assert any("menu" in line.lower() for line in session.injected)
-        assert not any("changed the subject" in line.lower() for line in session.injected)
+        assert any("working on your order" in line.lower() for line in session.injected)
+        assert not any("analyze" in line.lower() or "changed the subject" in line.lower() for line in session.injected)
         assert any("placed" in line.lower() for line in session.injected)
         assert session.behaviors and set(session.behaviors) == {"queue"}
     finally:

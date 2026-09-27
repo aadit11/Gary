@@ -56,6 +56,7 @@ class BrowserJob:
     park: bool = False  # after a successful lookup, leave the browser on that page
     stay: bool = False  # this job continues on a page a lookup already opened
     page_name: str = ""
+    park_when: str = ""  # only park if the result text contains this (e.g. "OPEN")
 
     @property
     def ok(self) -> bool:
@@ -133,9 +134,9 @@ class BrowserJobRunner:
     # --- API ---------------------------------------------------------------
     def submit(self, site: str, goal: str, user_id: str | None = None, on_done: Callable | None = None,
                flow_key: str | None = None, replay: bool = True, on_progress: Callable | None = None,
-               lookup: bool = False, park: bool = False, page_name: str = "") -> BrowserJob:
+               lookup: bool = False, park: bool = False, page_name: str = "", park_when: str = "") -> BrowserJob:
         job = BrowserJob(site=site, goal=goal, user_id=user_id, on_done=on_done, flow_key=flow_key, replay=replay,
-                         on_progress=on_progress, lookup=lookup, park=park, page_name=page_name)
+                         on_progress=on_progress, lookup=lookup, park=park, page_name=page_name, park_when=park_when)
         self._jobs[job.id] = job
         self.start()
         self._queue.put(job)
@@ -160,10 +161,10 @@ class BrowserJobRunner:
     def run_now(self, site: str, goal: str, user_id: str | None = None, headless: bool | None = None,
                 use_screenshot: bool | None = None, max_steps: int | None = None,
                 flow_key: str | None = None, replay: bool = True, lookup: bool = False,
-                park: bool = False, page_name: str = "") -> BrowserJob:
+                park: bool = False, page_name: str = "", park_when: str = "") -> BrowserJob:
         """Run a job on the calling thread (CLI and tests)."""
         job = BrowserJob(site=site, goal=goal, user_id=user_id, flow_key=flow_key, replay=replay,
-                         lookup=lookup, park=park, page_name=page_name)
+                         lookup=lookup, park=park, page_name=page_name, park_when=park_when)
         self._jobs[job.id] = job
         self._execute(job, headless=headless, use_screenshot=use_screenshot, max_steps=max_steps)
         return job
@@ -320,6 +321,12 @@ class BrowserJobRunner:
                 if job.steps >= max_steps:
                     job.status, job.error = "failed", f"no result after {max_steps} steps"
                     break
+                recent = [a.split("(")[0] for a in job.actions[-6:]]
+                if len(recent) >= 3 and all(a == "scroll" for a in recent[-3:]) and hasattr(agent, "note"):
+                    if len(recent) >= 6 and all(a == "scroll" for a in recent):
+                        agent.note("You have scrolled six times without acting. Stop scrolling. Choose the closest matching item that is in the tree right now and add it, or reply report_infeasible if nothing related is listed.")
+                    else:
+                        agent.note("Scrolling is not finding it. The tree already lists the menu items; pick the closest one and act, do not scroll again.")
                 plan = agent.next_plan(obs)
                 if job.status != "running":
                     break
@@ -354,7 +361,8 @@ class BrowserJobRunner:
             job.status, job.error = "failed", f"{type(e).__name__}: {str(e)[:200]}"
         finally:
             held = False
-            if env is not None and job.park and job.ok and job.user_id and isinstance(obs, dict):
+            wants_park = job.park and job.ok and (not job.park_when or job.park_when.upper() in (job.result_text or "").upper())
+            if env is not None and wants_park and job.user_id and isinstance(obs, dict):
                 self._hold_page(job, env, obs)
                 held = True
                 log.info("job %s leaving the browser on %s", job.id, job.page_name or job.final_url or "the open page")

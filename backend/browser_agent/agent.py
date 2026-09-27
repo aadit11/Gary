@@ -20,7 +20,7 @@ from browser_agent.actions import ACTION_SET
 
 log = logging.getLogger(__name__)
 
-AXTREE_CHAR_CAP = 25_000
+AXTREE_CHAR_CAP = 60_000  # a store page with reviews is ~30k; give the model the whole menu so it never scrolls
 MAX_MISSES = 3
 MAX_PLAN = 8
 
@@ -30,7 +30,8 @@ You are operating a web browser to complete a task on behalf of an older adult w
 
 Rules:
 - Only choose items, restaurants, addresses, and options that actually appear on the page. Never invent them.
-- If the goal names a specific item and it is not on the page, pick the closest match and say so in your final message.
+- If the goal names a specific item and it is not listed exactly, pick the closest item that IS on the menu (for example "8 piece" or "wings" -> the best-matching wings item) and say what you chose in your final message. Only report_infeasible if nothing on the menu is remotely related.
+- The tree already lists items that are off screen. Do not scroll to look for an item; read the tree. Never scroll more than twice in a row.
 - Follow the site's own flow to the end: the task is complete only after the final confirmation button (Place Order, Request, Book) has been clicked.
 - Plan ahead: output several actions in one block when you are confident of them, one per line, in order. Use bid actions like click("12") only for elements in the current tree. For elements that will appear after an earlier action (a dialog's confirm button, the cart's Checkout button, the checkout page's Place Order button), use the named actions: click_named("button", "Checkout.*"), fill_named("textbox", "Search", "Souvla"), press_named("textbox", "Search", "Enter"). Name patterns are case-insensitive regexes; wildcard prices with .*
 - If an action fails, you will be shown the page again and can re-plan from there.

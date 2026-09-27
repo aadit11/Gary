@@ -40,7 +40,8 @@ LOOKUP_HINT = (
 
 STAY_HINT = (
     "You are already on the restaurant page. Do not go back to the home page and do not search for the restaurant again. "
-    "Find the dish on this menu. Click the Add button next to it; a dialog appears with size options and an "
+    "Find the dish on this menu, or the closest item to it if the exact name is not listed (say which one you chose). "
+    "The menu items are in the page tree; do not scroll around looking. Click the Add button next to it; a dialog appears with size options and an "
     "'Add to cart' button, click that. Then open the cart: it is the button at the top right whose label is just the "
     "item count (pattern ^\\d+$). Click Checkout in the cart drawer, and on the checkout page click Place Order. "
     "The order is complete only after Place Order has been clicked and a confirmation is shown."

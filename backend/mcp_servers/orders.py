@@ -146,20 +146,24 @@ def _call_loop() -> Optional[asyncio.AbstractEventLoop]:
 
 
 def _progress_callback(call_loop: Optional[asyncio.AbstractEventLoop], user_id: str, fallback: str):
-    spoken = {"at": 0.0, "line": ""}
+    """Speak a short, fixed reassurance while the browser works: first after ~12 s, then every 20 s.
 
-    def on_progress(reason: str) -> None:
+    Never the model's own reasoning (it reads like "I need to analyze the current situation")."""
+    started = time.monotonic()
+    spoken = {"n": 0}
+
+    def on_progress(_reason: str) -> None:
         from voice.bridge import ACTIVE_SESSIONS
 
         session = ACTIVE_SESSIONS.get(user_id)
         if session is not None and getattr(session, "order_updates_paused", False):
             return
-        line = _spoken_step(reason) or fallback
-        now = time.monotonic()
-        if line == spoken["line"] or now - spoken["at"] < 8:
+        elapsed = time.monotonic() - started
+        due = 12 if spoken["n"] == 0 else 12 + 20 * spoken["n"]
+        if elapsed < due:
             return
-        spoken["at"] = now
-        spoken["line"] = line
+        spoken["n"] += 1
+        line = fallback if spoken["n"] == 1 else "Still working on it, thanks for your patience."
         _speak_into_call(call_loop, user_id, line, behavior="queue")
 
     return on_progress
@@ -258,6 +262,7 @@ def _begin_restaurant_check(user_id: str, restaurant: str, dish: str = "") -> No
         replay=False,
         lookup=True,
         park=True,
+        park_when="OPEN",
         page_name=restaurant,
         on_done=on_done,
         on_progress=_progress_callback(call_loop, user_id, f"I'm still checking whether {restaurant} is open."),
