@@ -42,3 +42,15 @@ def test_second_yes_after_resolution(demo):
     approvals.request(demo["user_id"], "pay_bill", {}, "x")
     handle_reply("+15550100002", "yes")
     assert "nothing waiting" in handle_reply("+15550100002", "yes")
+
+
+def test_resolve_by_id_matches_text_reply(demo):
+    from webhooks.sms import resolve_by_id
+
+    aid = approvals.request(demo["user_id"], "pay_bill", {"bill_id": "b1"}, "over limit")
+    assert "approved" in resolve_by_id(aid, True).lower()
+    assert approvals.get(aid).status == "approved"
+    assert "already handled" in resolve_by_id(aid, False)
+    aid2 = approvals.request(demo["user_id"], "pay_person", {"to": "IRS"}, "scam")
+    assert "won't" in resolve_by_id(aid2, False)
+    assert approvals.get(aid2).status == "denied"
