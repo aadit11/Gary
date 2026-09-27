@@ -11,7 +11,8 @@ from agisdk.REAL.browsergym.webclones.base import AbstractWebCloneTask
 
 from config import settings
 
-SITES = ("dashdish", "udriver")
+SITES = ("dashdish", "udriver", "taskhare")
+LOCAL_SITES = {"taskhare"}
 
 # Short, site-specific flow hints appended to the goal: the knowledge a person who has used the
 # app once would have. Describe the flow, never specific element ids.
@@ -29,6 +30,12 @@ SITE_HINTS = {
         "type the destination in 'Enter Destination' and pick a suggestion, click 'See prices', wait for the "
         "ride options to load, then click the Request button for the chosen ride. The ride is booked only "
         "after the Request button has been clicked and a confirmation is shown."
+    ),
+    "taskhare": (
+        "How TaskHare works: type the job in the box labeled Describe the job and click Search, "
+        "or click a job type such as Plumbing. Click the link Choose and the tasker's name. "
+        "Click the time that matches the visit, then click Confirm this visit. "
+        "The hire is complete only when the page heading says You're booked. Do not invent a tasker or a time."
     ),
 }
 
@@ -59,7 +66,11 @@ def goal_with_hints(site: str, goal: str, lookup: bool = False, stay: bool = Fal
 
 
 def site_url(site: str) -> str:
-    return {"dashdish": settings.real_dashdish_url, "udriver": settings.real_udriver_url}[site].rstrip("/")
+    return {
+        "dashdish": settings.real_dashdish_url,
+        "udriver": settings.real_udriver_url,
+        "taskhare": settings.taskhare_url,
+    }[site].rstrip("/")
 
 
 class FreeformCloneTask(AbstractWebCloneTask):
@@ -68,10 +79,32 @@ class FreeformCloneTask(AbstractWebCloneTask):
     def __init__(self, seed: int, site: str = "dashdish", goal: str = "", url: str | None = None) -> None:
         if site not in SITES:
             raise ValueError(f"unknown site {site!r}; expected one of {SITES}")
-        super().__init__(seed, task_name=f"{site}-1", task_version="v2")
+        self.local = site in LOCAL_SITES
+        if self.local:
+            from agisdk.REAL.browsergym.core.task import AbstractBrowserTask
+
+            AbstractBrowserTask.__init__(self, seed)
+            self.slow_mo = 0
+            self.timeout = 15000
+        else:
+            super().__init__(seed, task_name=f"{site}-1", task_version="v2")
         self.site = site
         self.goal = goal
         self.url = (url or site_url(site)).rstrip("/")
+        self.page = None
+        self.background_page = None
+
+    def setup(self, page):  # noqa: ANN001
+        if self.local:
+            self.page = page
+            page.goto(self.url, timeout=20000)
+            return self.goal, {}
+        return super().setup(page)
+
+    def teardown(self) -> None:
+        if self.local or self.background_page is None:
+            return
+        super().teardown()
 
     def validate(self, page, chat_messages, timeout: int = 1000, verbose: bool = True):  # noqa: ARG002
         return 0.0, False, "", {}

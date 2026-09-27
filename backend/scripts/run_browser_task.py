@@ -20,7 +20,7 @@ from browser_agent.runner import BrowserJobRunner  # noqa: E402
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("site", choices=["dashdish", "udriver"])
+    ap.add_argument("site", choices=["dashdish", "udriver", "taskhare"])
     ap.add_argument("goal")
     ap.add_argument("--headed", action="store_true", help="show the browser window")
     ap.add_argument("--no-screenshot", action="store_true", help="accessibility tree only, no screenshot to the model")

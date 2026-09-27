@@ -47,6 +47,7 @@ class BrowserJob:
     replayed_steps: int = 0
     seconds: float = 0.0
     final_url: str = ""
+    final_text: str = ""  # accessibility text of the last page, for independent verification
     actions: list[str] = field(default_factory=list)
     executed: list[dict] = field(default_factory=list)  # {"action", "role", "name", "ok"}
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -57,6 +58,7 @@ class BrowserJob:
     stay: bool = False  # this job continues on a page a lookup already opened
     page_name: str = ""
     park_when: str = ""  # only park if the result text contains this (e.g. "OPEN")
+    decider: str = ""    # "" = settings.browser_decider | llm | jev
 
     @property
     def ok(self) -> bool:
@@ -79,11 +81,16 @@ def _default_env_factory(site: str, goal: str, headless: bool, lookup: bool = Fa
     )
 
 
-def _default_agent_factory(goal: str, use_screenshot: bool, site: str = "dashdish", lookup: bool = False, stay: bool = False) -> Any:
+def _default_agent_factory(goal: str, use_screenshot: bool, site: str = "dashdish", lookup: bool = False, stay: bool = False,
+                           decider: str = "", page_name: str = "") -> Any:
     from browser_agent.agent import LOOKUP_EXAMPLES, LOOKUP_SYSTEM, MuseSparkAgent
     from browser_agent.tasks import goal_with_hints
 
     hinted = goal_with_hints(site, goal, lookup=lookup, stay=stay)
+    if (decider or settings.browser_decider) == "jev":
+        from browser_agent.jev_agent import JevAgent
+
+        return JevAgent(hinted, lookup=lookup, restaurant=page_name)
     if lookup:
         return MuseSparkAgent(hinted, use_screenshot=use_screenshot, system_text=LOOKUP_SYSTEM, examples=LOOKUP_EXAMPLES)
     return MuseSparkAgent(hinted, use_screenshot=use_screenshot)
@@ -134,9 +141,9 @@ class BrowserJobRunner:
     # --- API ---------------------------------------------------------------
     def submit(self, site: str, goal: str, user_id: str | None = None, on_done: Callable | None = None,
                flow_key: str | None = None, replay: bool = True, on_progress: Callable | None = None,
-               lookup: bool = False, park: bool = False, page_name: str = "", park_when: str = "") -> BrowserJob:
+               lookup: bool = False, park: bool = False, page_name: str = "", park_when: str = "", decider: str = "") -> BrowserJob:
         job = BrowserJob(site=site, goal=goal, user_id=user_id, on_done=on_done, flow_key=flow_key, replay=replay,
-                         on_progress=on_progress, lookup=lookup, park=park, page_name=page_name, park_when=park_when)
+                         on_progress=on_progress, lookup=lookup, park=park, page_name=page_name, park_when=park_when, decider=decider)
         self._jobs[job.id] = job
         self.start()
         self._queue.put(job)
@@ -161,10 +168,10 @@ class BrowserJobRunner:
     def run_now(self, site: str, goal: str, user_id: str | None = None, headless: bool | None = None,
                 use_screenshot: bool | None = None, max_steps: int | None = None,
                 flow_key: str | None = None, replay: bool = True, lookup: bool = False,
-                park: bool = False, page_name: str = "", park_when: str = "") -> BrowserJob:
+                park: bool = False, page_name: str = "", park_when: str = "", decider: str = "") -> BrowserJob:
         """Run a job on the calling thread (CLI and tests)."""
         job = BrowserJob(site=site, goal=goal, user_id=user_id, flow_key=flow_key, replay=replay,
-                         lookup=lookup, park=park, page_name=page_name, park_when=park_when)
+                         lookup=lookup, park=park, page_name=page_name, park_when=park_when, decider=decider)
         self._jobs[job.id] = job
         self._execute(job, headless=headless, use_screenshot=use_screenshot, max_steps=max_steps)
         return job
@@ -172,7 +179,7 @@ class BrowserJobRunner:
     # --- execution ---------------------------------------------------------
     def _make_agent(self, job: BrowserJob, use_screenshot: bool) -> Any:
         if self._agent_factory is _default_agent_factory:
-            return self._agent_factory(job.goal, use_screenshot, job.site, job.lookup, job.stay)
+            return self._agent_factory(job.goal, use_screenshot, job.site, job.lookup, job.stay, job.decider, job.page_name)
         return self._agent_factory(job.goal, use_screenshot)
 
     def _claim_page(self, job: BrowserJob) -> tuple[_ParkedPage | None, _ParkedPage | None]:
@@ -356,6 +363,17 @@ class BrowserJobRunner:
                     log.info("job %s step %d: %s%s", job.id, job.steps, action[:140], "" if ok else "  (FAILED, re-planning)")
                     if not ok:
                         break
+            try:
+                from browser_agent.agent import full_text
+
+                if job.status == "done" and hasattr(env, "_get_obs"):
+                    time.sleep(1.5)  # let a confirmation (order id) render after the final click
+                    obs = env._get_obs()
+                job.final_text = full_text(obs) if isinstance(obs, dict) else ""
+                if isinstance(obs, dict):
+                    job.final_url = obs.get("url", job.final_url)
+            except Exception:  # noqa: BLE001
+                pass
         except Exception as e:  # noqa: BLE001
             log.exception("job %s crashed", job.id)
             job.status, job.error = "failed", f"{type(e).__name__}: {str(e)[:200]}"
