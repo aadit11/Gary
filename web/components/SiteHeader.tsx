@@ -23,7 +23,10 @@ export default function SiteHeader({ name }: { name: string }) {
   return (
     <header className="site">
       <div className="site-bar">
-        <Link href={inCare ? "/dashboard" : "/"} className="brand">Gary</Link>
+        <Link href={inCare ? "/dashboard" : "/"} className="brand">
+          <img src="/logo-mark.png" alt="" className="brand-mark" />
+          Gary
+        </Link>
         <p className="site-for">{inCare ? `Caring for ${name}` : "For caregivers"}</p>
         <nav>
           {inCare ? (

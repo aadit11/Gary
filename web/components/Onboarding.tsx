@@ -79,7 +79,7 @@ export default function Onboarding({ initial, person, start }: { initial: CarePr
 
       <section className="connect-card" key={provider.key}>
         <div className="logo-pair">
-          <div className="logo-circle gary" aria-hidden="true">G</div>
+          <div className="logo-circle gary"><img src="/logo-mark.png" alt="Gary logo" /></div>
           <div className="logo-circle"><img src={provider.key === "bank" ? (BANKS.find((b) => b.id === c.bank.institution)?.logo || provider.logo) : provider.logo} alt={`${provider.name} logo`} /></div>
         </div>
         <h2>Gary uses <strong>{provider.name}</strong> to {provider.does} for {person}</h2>
