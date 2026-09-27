@@ -162,5 +162,9 @@ def insert_message(
 
 
 def seed_query() -> str:
-    """Gmail search string that finds messages inserted by seed_gmail.py."""
-    return f"{SEED_HEADER}:{SEED_HEADER_VALUE}"
+    """Gmail search string that finds messages inserted by seed_gmail.py.
+
+    Gmail does not index custom headers, so X-Gary-Seed cannot be searched.
+    Seed senders all use .example addresses.
+    """
+    return "from:example in:inbox"

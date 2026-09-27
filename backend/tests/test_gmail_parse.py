@@ -11,8 +11,8 @@ def _b64(text: str) -> str:
     return base64.urlsafe_b64encode(text.encode("utf-8")).decode("ascii").rstrip("=")
 
 
-def test_seed_query_targets_header():
-    assert "X-Gary-Seed" in seed_query()
+def test_seed_query_targets_seed_senders():
+    assert seed_query() == "from:example in:inbox"
 
 
 def test_extract_body_plain():

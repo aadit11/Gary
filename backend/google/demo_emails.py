@@ -4,7 +4,13 @@ and core.policy.SCAM_PATTERNS so classify() stays deterministic for the hackatho
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
+
+# Tomorrow in the demo user's timezone, so a fresh seed is still "upcoming" for check-ins.
+_TOMORROW = datetime.now(ZoneInfo("America/New_York")) + timedelta(days=1)
+_APPT_DAY = f"{_TOMORROW.strftime('%A, %B')} {_TOMORROW.day}, {_TOMORROW.year}"
 
 # Sender addresses look plausible; they are not real services.
 DEMO_EMAILS: list[dict[str, Any]] = [
@@ -54,7 +60,7 @@ DEMO_EMAILS: list[dict[str, Any]] = [
         "body": (
             "Sunrise Pharmacy\n\n"
             "Your prescription refill is ready for pickup.\n"
-            "Please see the pharmacist on Friday, September 26, 2026 at 11 AM.\n"
+            f"Please see the pharmacist on {_APPT_DAY} at 11 AM.\n"
             "Location: Sunrise Pharmacy, 100 Main Street.\n"
         ),
     },
@@ -66,7 +72,7 @@ DEMO_EMAILS: list[dict[str, Any]] = [
         "body": (
             "Springfield Medical Clinic\n\n"
             "This is a reminder of your doctor's appointment with Dr. Patel.\n"
-            "When: Saturday, September 26, 2026 at 2:00 PM\n"
+            f"When: {_APPT_DAY} at 2:00 PM\n"
             "Location: Springfield Medical, 200 Oak Avenue\n\n"
             "Please arrive 10 minutes early.\n"
         ),
