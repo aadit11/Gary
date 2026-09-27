@@ -170,8 +170,27 @@ _restaurant_status: dict[tuple[str, str], str] = {}
 _pending_dish: dict[tuple[str, str], str] = {}
 
 
+_NAME_NOISE = {"the", "a", "an", "restaurant", "restaurants", "place", "on", "from", "at", "in", "doordash", "dashdish", "please", "near", "me"}
+
+
+def _normalize_restaurant(restaurant: str) -> str:
+    """'the Souvla restaurant on DoorDash' -> 'souvla'. Speech gives many spellings of one name."""
+    words = re.findall(r"[a-z0-9']+", (restaurant or "").casefold())
+    kept = [w for w in words if w not in _NAME_NOISE]
+    return " ".join(kept or words)
+
+
 def _restaurant_key(user_id: str, restaurant: str) -> tuple[str, str]:
-    return (user_id, restaurant.casefold())
+    """Reuse an existing lookup for this user when the names match after normalization
+    (or one contains the other), so a re-phrased name never restarts the check."""
+    name = _normalize_restaurant(restaurant)
+    for key in list(_restaurant_status):
+        if key[0] != user_id:
+            continue
+        other = key[1]
+        if other == name or (name and other and (name in other or other in name)):
+            return key
+    return (user_id, name)
 
 
 def _eligibility(status: str, result_text: str) -> str:
@@ -219,6 +238,7 @@ def _begin_restaurant_check(user_id: str, restaurant: str, dish: str = "") -> No
             return
         state = _eligibility(getattr(job, "status", ""), getattr(job, "result_text", ""))
         if state == "cancelled":
+            _restaurant_status.pop(key, None)  # a retry must be possible; never leave "checking" behind
             return
         _restaurant_status[key] = state
         saved = _pending_dish.get(key, "")
@@ -259,6 +279,18 @@ def search_food_and_groceries(user_id: str, restaurant: str = "", dish: str = ""
             f"Which restaurant should I order {dish} from?",
             data={"category": "food_order", "outcome": "resolved", "item": dish},
         )
+    key = _restaurant_key(user_id, restaurant)
+    current = _restaurant_status.get(key, "")
+    if current == "checking":
+        if dish:
+            _pending_dish[key] = dish
+        return speak(
+            f"I'm still checking whether {restaurant} is open. One moment.",
+            data={"category": "food_order", "outcome": "checking", "restaurant": restaurant, "item": dish},
+        )
+    if current == "open":
+        say = f"{restaurant} is open for delivery. " + (f"That's {dish} from {restaurant}, delivered to your home. Should I place it?" if dish else "What would you like?")
+        return speak(say, data={"category": "food_order", "outcome": "open", "restaurant": restaurant, "item": dish})
     try:
         _begin_restaurant_check(user_id, restaurant, dish)
     except Exception:  # noqa: BLE001

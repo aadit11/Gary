@@ -318,3 +318,42 @@ def test_confirm_service_booking_happy_path(demo, fake_db):
 def test_confirm_service_booking_rejects_unknown_action_id(demo):
     result = orders.confirm_service_booking(demo["user_id"], "not-a-real-id")
     assert _data(result)["outcome"] == "error"
+
+# --- restaurant-name matching (a re-phrased name must not restart or cancel a lookup) ---
+
+def test_normalize_restaurant_names():
+    n = orders._normalize_restaurant
+    assert n("Souvla") == "souvla"
+    assert n("the Souvla restaurant on DoorDash") == "souvla"
+    assert n("Pho House, please") == "pho house"
+    assert n("The Restaurant") == "the restaurant"  # nothing but noise words: keep them
+
+
+def test_rephrased_name_reuses_lookup_key():
+    orders._restaurant_status.clear()
+    k1 = orders._restaurant_key("u1", "Souvla")
+    orders._restaurant_status[k1] = "checking"
+    assert orders._restaurant_key("u1", "Souvla restaurant") == k1
+    assert orders._restaurant_key("u1", "the Souvla place") == k1
+    assert orders._restaurant_key("u2", "Souvla") != k1
+    assert orders._restaurant_key("u1", "Pho House") == ("u1", "pho house")
+    orders._restaurant_status.clear()
+
+
+def test_second_mention_does_not_cancel_running_lookup(monkeypatch, demo):
+    orders._restaurant_status.clear()
+    runner = FakeBrowserRunner()
+    import types
+    monkeypatch.setitem(sys.modules, "main", types.SimpleNamespace(app=types.SimpleNamespace(state=types.SimpleNamespace(browser_runner=runner))))
+    uid = demo["user_id"]
+    json.loads(orders.search_food_and_groceries(uid, restaurant="Souvla", dish="cheeseburger"))
+    assert len(runner.submitted) == 1 and runner.submitted[0]["lookup"]
+    out = json.loads(orders.search_food_and_groceries(uid, restaurant="Souvla restaurant", dish="cheeseburger"))
+    assert "still checking" in out["say"]
+    out = json.loads(orders.prepare_order(uid, restaurant="the Souvla place", item="cheeseburger"))
+    assert "still checking" in out["say"]
+    assert len(runner.submitted) == 1, "a re-phrased name must not start a second lookup"
+    # a cancelled lookup clears its status so a retry is possible
+    runner.finish(FakeJob(status="cancelled", result_text=""))
+    assert not orders._restaurant_status
+    orders._restaurant_status.clear()

@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     real_dashdish_url: str = "https://evals-dashdish.vercel.app"
     real_udriver_url: str = "https://evals-udriver.vercel.app"
 
+    # Set GARY_NO_SCHEDULER=1 to skip the reminder scheduler (console testing).
+    gary_no_scheduler: bool = False
+
     # Set GARY_FAKE_DB=1 to force the in-memory database (tests, teammates without creds).
     gary_fake_db: bool = False
 

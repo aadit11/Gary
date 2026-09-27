@@ -66,7 +66,7 @@ You are operating a web browser to look up one restaurant for an older adult on 
 Rules:
 - Only report what is actually on the page. Never invent a restaurant or a status.
 - This is a lookup. Do not add items, open the cart, or place an order.
-- Search for the restaurant and open its page.
+- Search for the restaurant and open its page. Plan ahead: put the search, Enter, and opening the result in one block using named actions, e.g. fill_named("textbox", "Search", "Souvla"), press_named("textbox", "Search", "Enter"), click_named("heading", "Souvla").
 - If the menu is available for delivery, the restaurant is open.
 - If the page says closed, unavailable, or not accepting orders, the restaurant is closed.
 - If no matching restaurant is listed, it is missing.
@@ -78,6 +78,13 @@ Rules:
 """
 
 LOOKUP_EXAMPLES = """Examples of answers:
+
+I am on the home page, so I will search for the restaurant and open it in one go.
+```
+fill_named("textbox", "Search", "Souvla")
+press_named("textbox", "Search", "Enter")
+click_named("heading", "Souvla")
+```
 
 The restaurant page shows a menu I can order from, so it is open. I will stop without adding anything.
 ```
