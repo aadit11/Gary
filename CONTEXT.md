@@ -85,3 +85,13 @@ One line per merged PR, newest first. Keep it to what changed, not how.
 Jev decides in ~0.4 s, so per-step cost is browser time, not model time; it takes one action per decision (no plans) and never scrolled or looped. Haiku plans several actions per call but each call is 2 to 5 s. Both picked Buffalo Spicy Wings for "8 piece". Jev numbers predate the 1.5 s post-click re-observe added for verification (add ~1.5 s per job). Recommendation: `BROWSER_DECIDER=jev` for the demo, Haiku as fallback if the Jev API is down (the agent falls back to noop then infeasible on request errors).
 
 Console replay of the demo conversation with Jev (Panera missing -> Wingstop open -> "8 pc wing" placed): 15.6 s + 15.1 s + 16.3 s, order id spoken back. The runner now keeps **one browser open across jobs** (soft reset: clone `/config` + `/finish` + home, no Chromium relaunch), so no more window churn. Jev is not offered INFEASIBLE until it has taken 3 actions, and the order goal says to pick the closest listed item. `voice/prompts/base.md` tells the voice model never to announce a check's outcome before a tool or message provides it.
+
+## Staged food ordering (branch `jev-pipeline`, 2026-09-27)
+
+The browser runs ahead of the conversation (`mcp_servers/orders.py`):
+1. **Restaurant named** -> `search_food_and_groceries` immediately starts a lookup job (open / closed / missing), parks on the store page, and asks for the dish in the same breath. ~15 s.
+2. **Dish known** -> a `stage` job adds the closest item, opens the cart, clicks Checkout, and stops there (park_when STAGED). Item and price are captured from the Add / Add-to-cart clicks (`JevAgent._note_staged_item`), `policy.check` runs on the real price, a pending action is created, and the read-back is spoken: "Wingstop has Buffalo Spicy Wings for $14.56, ready to deliver to your home. Should I place it?" ~17 s.
+3. **Yes** -> `confirm_order` (action id may be blank; the staged one is used) consumes the pending action and a `place` job clicks Place Order on the parked checkout page. ~8 s. Result spoken back with the order id.
+`prepare_order` only repeats the read-back or starts a favorite. One food session per caller (`_food`), 10-minute TTL; a new restaurant cancels and replaces it.
+
+Deepgram think model is now `gpt-4.1` (config default): gpt-4o-mini asked about flavors and announced "I found..." without calling tools. Console replay of Panera -> Wingstop -> "a large wings please" -> yes: 15.2 s, 14.6 s, 17.6 s, 7.8 s; order id confirmed.

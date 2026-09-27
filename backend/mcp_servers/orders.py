@@ -80,8 +80,18 @@ def _get_favorite(user_id: str, favorite_id: str) -> Optional[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Food & groceries
+# Food & groceries: staged ordering
+#
+# The browser runs ahead of the conversation. The moment a restaurant is named, stage 1 opens
+# it (open / closed / missing). As soon as the dish is known, stage 2 adds the closest item to
+# the cart and stops on the checkout page; the caller then hears the real item and price and
+# is asked to confirm. "Yes" is stage 3: one click on Place Order. Nothing is ordered before the
+# pending action is consumed by confirm_order (safety invariant 2), and policy.check() runs on
+# the staged price before the read-back (invariant 1).
 # ---------------------------------------------------------------------------
+
+STAGE_TTL_S = 600
+
 
 def _caller_name(user_id: str) -> str:
     try:
@@ -93,26 +103,7 @@ def _caller_name(user_id: str) -> str:
     return "They"
 
 
-def _spoken_step(reason: str) -> str:
-    """One plain sentence from Muse's latest reasoning, with no browser commands."""
-    text = re.sub(r"```.*?```", "", reason or "", flags=re.S).strip()
-    text = text.split("\n")[0].strip()
-    if not text or re.search(r"\b(click|fill|press|noop|send_msg_to_user)\s*\(", text):
-        return ""
-    sentence = re.split(r"(?<=[.!?])\s", text)[0].strip()
-    if len(sentence) > 160:
-        sentence = sentence[:160].rsplit(" ", 1)[0]
-    if len(sentence) < 8:
-        return ""
-    return sentence if sentence[-1] in ".!?" else sentence + "."
-
-
-def _speak_into_call(
-    call_loop: Optional[asyncio.AbstractEventLoop],
-    user_id: str,
-    message: str,
-    behavior: str = "queue",
-) -> None:
+def _speak_into_call(call_loop: Optional[asyncio.AbstractEventLoop], user_id: str, message: str, behavior: str = "queue") -> None:
     if call_loop is None:
         return
     from voice.bridge import ACTIVE_SESSIONS
@@ -126,14 +117,16 @@ def _speak_into_call(
         log.exception("failed to speak into the live call for %s", user_id)
 
 
-def _stop_active_order(user_id: str) -> None:
-    """Stop an order already being placed so its updates stop talking over the call."""
+def _runner():
     import sys
 
-    main = sys.modules.get("main")
-    app = getattr(main, "app", None)
-    runner = getattr(getattr(app, "state", None), "browser_runner", None)
-    cancel = getattr(runner, "cancel_for_user", None)
+    main = sys.modules.get("main") or importlib.import_module("main")
+    return main.app.state.browser_runner
+
+
+def _stop_active_order(user_id: str) -> None:
+    """Stop any browser job for this caller so its updates stop talking over the call."""
+    cancel = getattr(_runner(), "cancel_for_user", None)
     if callable(cancel):
         cancel(user_id)
 
@@ -146,9 +139,7 @@ def _call_loop() -> Optional[asyncio.AbstractEventLoop]:
 
 
 def _progress_callback(call_loop: Optional[asyncio.AbstractEventLoop], user_id: str, fallback: str):
-    """Speak a short, fixed reassurance while the browser works: first after ~12 s, then every 20 s.
-
-    Never the model's own reasoning (it reads like "I need to analyze the current situation")."""
+    """Fixed reassurance while the browser works: first after ~12 s, then every 20 s. Never model reasoning."""
     started = time.monotonic()
     spoken = {"n": 0}
 
@@ -169,11 +160,6 @@ def _progress_callback(call_loop: Optional[asyncio.AbstractEventLoop], user_id: 
     return on_progress
 
 
-# restaurant name, lowercased, for one user -> checking | open | closed | missing | error
-_restaurant_status: dict[tuple[str, str], str] = {}
-_pending_dish: dict[tuple[str, str], str] = {}
-
-
 _NAME_NOISE = {"the", "a", "an", "restaurant", "restaurants", "place", "on", "from", "at", "in", "doordash", "dashdish", "please", "near", "me"}
 
 
@@ -184,17 +170,29 @@ def _normalize_restaurant(restaurant: str) -> str:
     return " ".join(kept or words)
 
 
-def _restaurant_key(user_id: str, restaurant: str) -> tuple[str, str]:
-    """Reuse an existing lookup for this user when the names match after normalization
-    (or one contains the other), so a re-phrased name never restarts the check."""
-    name = _normalize_restaurant(restaurant)
-    for key in list(_restaurant_status):
-        if key[0] != user_id:
-            continue
-        other = key[1]
-        if other == name or (name and other and (name in other or other in name)):
-            return key
-    return (user_id, name)
+def _same_restaurant(a: str, b: str) -> bool:
+    a, b = _normalize_restaurant(a), _normalize_restaurant(b)
+    return bool(a and b) and (a == b or a in b or b in a)
+
+
+# One food session per caller: {restaurant, dish, stage, item, price, action_id, at}
+# stage: checking | open | closed | missing | staging | staged | placing | placed | error
+_food: dict[str, dict] = {}
+
+
+def _session(user_id: str) -> dict | None:
+    sess = _food.get(user_id)
+    if sess and time.monotonic() - sess.get("at", 0) > STAGE_TTL_S:
+        _food.pop(user_id, None)
+        return None
+    return sess
+
+
+def _set(user_id: str, **patch) -> dict:
+    sess = _food.setdefault(user_id, {"restaurant": "", "dish": "", "stage": "", "item": "", "price": 0.0, "action_id": ""})
+    sess.update(patch)
+    sess["at"] = time.monotonic()
+    return sess
 
 
 def _eligibility(status: str, result_text: str) -> str:
@@ -210,24 +208,27 @@ def _eligibility(status: str, result_text: str) -> str:
     return "error"
 
 
-def _eligibility_say(restaurant: str, state: str, dish: str) -> str:
-    if state == "open" and dish:
-        return f"{restaurant} is open for delivery. That's {dish} from {restaurant}, delivered to your home. Should I place it?"
-    if state == "open":
-        return f"{restaurant} is open for delivery. What would you like?"
-    if state == "closed":
-        return f"{restaurant} is closed right now, so I can't order from there. Want a different restaurant?"
-    if state == "missing":
-        return f"I couldn't find {restaurant} on DoorDash. Want a different restaurant?"
-    return f"I couldn't check {restaurant} just now. Want me to try again?"
+def _parse_staged(result_text: str) -> tuple[str, float] | None:
+    """'STAGED: Buffalo Spicy Wings | $12.96' -> ('Buffalo Spicy Wings', 12.96)."""
+    m = re.search(r"STAGED:\s*(.+?)\s*\|\s*\$?\s*([\d,]+(?:\.\d+)?)", result_text or "", re.I)
+    if m:
+        return m.group(1).strip(" .|"), float(m.group(2).replace(",", ""))
+    m = re.search(r"STAGED:\s*(.+)", result_text or "", re.I)
+    if m:
+        return m.group(1).strip(" .|"), 0.0
+    return None
 
 
-def _begin_restaurant_check(user_id: str, restaurant: str, dish: str = "") -> None:
-    """Look the restaurant up on DoorDash before anyone is asked for a dish."""
-    key = _restaurant_key(user_id, restaurant)
+def _readback(sess: dict) -> str:
+    price = f" for {money_str(sess['price'])}" if sess.get("price") else ""
+    return f"{sess['restaurant']} has {sess['item']}{price}, ready to deliver to your home. Should I place it?"
+
+
+# --- stage 1: open the restaurant --------------------------------------------
+
+def _begin_lookup(user_id: str, restaurant: str, dish: str) -> None:
     _stop_active_order(user_id)
-    _restaurant_status[key] = "checking"
-    _pending_dish[key] = dish.strip()
+    _set(user_id, restaurant=restaurant, dish=dish, stage="checking", item="", price=0.0, action_id="")
     call_loop = _call_loop()
     goal = (
         f"Look up {restaurant} on DoorDash. Do not add anything to the cart and do not place an order. "
@@ -238,267 +239,202 @@ def _begin_restaurant_check(user_id: str, restaurant: str, dish: str = "") -> No
     )
 
     def on_done(job) -> None:
-        if _restaurant_status.get(key) != "checking":
+        sess = _session(user_id)
+        if not sess or sess.get("stage") != "checking" or not _same_restaurant(sess["restaurant"], restaurant):
             return
         state = _eligibility(getattr(job, "status", ""), getattr(job, "result_text", ""))
         if state == "cancelled":
-            _restaurant_status.pop(key, None)  # a retry must be possible; never leave "checking" behind
+            _food.pop(user_id, None)
             return
-        _restaurant_status[key] = state
-        saved = _pending_dish.get(key, "")
-        activity.log_event(
-            user_id,
-            "restaurant_checked",
-            f"{restaurant} is {state}.",
-            {"category": "food_order", "outcome": state},
-        )
-        _speak_into_call(call_loop, user_id, _eligibility_say(restaurant, state, saved), behavior="queue")
+        _set(user_id, stage=state)
+        activity.log_event(user_id, "restaurant_checked", f"{restaurant} is {state}.", {"category": "food_order", "outcome": state})
+        if state == "open" and sess.get("dish"):
+            _speak_into_call(call_loop, user_id, f"{restaurant} is open. I'm getting the {sess['dish']} ready now.", behavior="queue")
+            _begin_staging(user_id, call_loop)
+            return
+        if state == "open":
+            line = f"{restaurant} is open for delivery. What would you like from there?"
+        elif state == "closed":
+            line = f"{restaurant} is closed right now, so I can't order from there. Want a different restaurant?"
+        elif state == "missing":
+            line = f"I couldn't find {restaurant} on DoorDash. Want a different restaurant?"
+        else:
+            line = f"I couldn't check {restaurant} just now. Want me to try again?"
+        _speak_into_call(call_loop, user_id, line, behavior="queue")
 
-    app_module = importlib.import_module("main")
-    app_module.app.state.browser_runner.submit(
-        site="dashdish",
-        goal=goal,
-        user_id=user_id,
-        replay=False,
-        lookup=True,
-        park=True,
-        park_when="OPEN",
-        page_name=restaurant,
-        on_done=on_done,
+    _runner().submit(
+        site="dashdish", goal=goal, user_id=user_id, replay=False, lookup=True, mode="lookup",
+        park=True, park_when="OPEN", page_name=restaurant, on_done=on_done,
         on_progress=_progress_callback(call_loop, user_id, f"I'm still checking whether {restaurant} is open."),
+    )
+
+
+# --- stage 2: add the dish and stop at checkout ------------------------------
+
+def _begin_staging(user_id: str, call_loop: Optional[asyncio.AbstractEventLoop] = None) -> None:
+    sess = _session(user_id)
+    if not sess or not sess.get("dish"):
+        return
+    restaurant, dish = sess["restaurant"], sess["dish"]
+    call_loop = call_loop or _call_loop()
+    _set(user_id, stage="staging")
+    goal = (
+        f"You are on the {restaurant} menu page. Find {dish}; if that exact dish is not listed, choose the closest item on the menu. "
+        "Click its Add button, then click 'Add to cart' in the dialog (a size is already selected; never click unlabeled buttons or the close button). "
+        "Open the cart (the button at the top right whose label is the item count), click Checkout, and STOP on the checkout page. "
+        "Do not click Place Order. Then finish with send_msg_to_user(\"STAGED: <exact item name as listed> | <item price shown, e.g. $12.96>\")."
+    )
+
+    def on_done(job) -> None:
+        cur = _session(user_id)
+        if not cur or cur.get("stage") != "staging":
+            return
+        status = getattr(job, "status", "")
+        parsed = _parse_staged(getattr(job, "result_text", "")) if status == "done" else None
+        if status == "cancelled":
+            return
+        if parsed and (len(parsed[0]) > 60 or re.search(r"\b(I|you|let me|however)\b", parsed[0])):
+            parsed = (dish, 0.0)  # the cart is staged but the summary was narration; use the caller's words
+        if not parsed:
+            _set(user_id, stage="error")
+            activity.log_event(user_id, "order_stage_failed", f"Could not stage {dish} at {restaurant}", {"category": "food_order", "outcome": "error"})
+            _speak_into_call(call_loop, user_id, f"I couldn't find {dish} at {restaurant}. Want to try something else?", behavior="queue")
+            return
+        item, price = parsed
+        decision = policy.check(kind="order", payee=restaurant, amount=price, user_id=user_id, message_text=item)
+        if decision.needs_approval:
+            _set(user_id, stage="needs_approval", item=item, price=price)
+            approvals.request(user_id=user_id, action="place_order", payload={"item_name": item, "vendor": restaurant, "price": price},
+                              reason=decision.reason, summary=f"{item} from {restaurant} for {money_str(price)}")
+            _speak_into_call(call_loop, user_id, f"{restaurant} has {item} for {money_str(price)}. That one's a bit unusual, so I'm checking with {decision.family_name} first.", behavior="queue")
+            return
+        action_id = pending.create("place_order", user_id, item_name=item, vendor=restaurant, price=price)
+        _set(user_id, stage="staged", item=item, price=price, action_id=action_id)
+        activity.log_event(user_id, "order_staged", f"{item} from {restaurant} for {money_str(price)} is ready to place.", {"category": "food_order", "outcome": "staged"})
+        _speak_into_call(call_loop, user_id, _readback(_session(user_id)), behavior="queue")
+
+    _runner().submit(
+        site="dashdish", goal=goal, user_id=user_id, replay=False, mode="stage",
+        park=True, park_when="STAGED", page_name=restaurant, on_done=on_done,
+        on_progress=_progress_callback(call_loop, user_id, f"I'm still getting the {dish} ready at {restaurant}."),
     )
 
 
 @orders.tool()
 def search_food_and_groceries(user_id: str, restaurant: str = "", dish: str = "") -> str:
-    """Check a named restaurant on DoorDash before asking what to order. Ask which restaurant if they only named a dish."""
+    """Call this the moment the caller names a restaurant, even before they say what to order; pass the dish too if they said it. It opens the restaurant in the background and, once the dish is known, gets it into the cart so the read-back has the real price."""
     restaurant = (restaurant or "").strip()
     dish = (dish or "").strip()
     if not restaurant and not dish:
-        return speak(
-            "Which restaurant should I use, and what would you like from there?",
-            data={"category": "food_order", "outcome": "resolved"},
-        )
+        return speak("Which restaurant should I use, and what would you like from there?", data={"category": "food_order", "outcome": "resolved"})
     if not restaurant:
-        return speak(
-            f"Which restaurant should I order {dish} from?",
-            data={"category": "food_order", "outcome": "resolved", "item": dish},
-        )
-    key = _restaurant_key(user_id, restaurant)
-    current = _restaurant_status.get(key, "")
-    if current == "checking":
-        if dish:
-            _pending_dish[key] = dish
-        return speak(
-            f"I'm still checking whether {restaurant} is open. One moment.",
-            data={"category": "food_order", "outcome": "checking", "restaurant": restaurant, "item": dish},
-        )
-    if current == "open":
-        say = f"{restaurant} is open for delivery. " + (f"That's {dish} from {restaurant}, delivered to your home. Should I place it?" if dish else "What would you like?")
-        return speak(say, data={"category": "food_order", "outcome": "open", "restaurant": restaurant, "item": dish})
+        return speak(f"Which restaurant should I order {dish} from?", data={"category": "food_order", "outcome": "resolved", "item": dish})
+
+    sess = _session(user_id)
+    same = bool(sess) and _same_restaurant(sess["restaurant"], restaurant)
+    if same:
+        stage = sess["stage"]
+        if dish and dish != sess.get("dish"):
+            _set(user_id, dish=dish)
+            if stage == "open":
+                _begin_staging(user_id)
+                return speak(f"{restaurant} is open. I'm getting the {dish} ready now, one moment.", data={"category": "food_order", "outcome": "staging"})
+            if stage in ("staged", "staging", "needs_approval", "error"):
+                _set(user_id, stage="open")
+                _begin_staging(user_id)
+                return speak(f"Sure, I'm getting the {dish} ready at {restaurant} instead.", data={"category": "food_order", "outcome": "staging"})
+        if stage == "checking":
+            ask = f"I'm still checking whether {restaurant} is open. " + ("" if sess.get("dish") else "What would you like from there?")
+            return speak(ask.strip(), data={"category": "food_order", "outcome": "checking"})
+        if stage == "open":
+            return speak(f"{restaurant} is open for delivery. What would you like from there?", data={"category": "food_order", "outcome": "open"})
+        if stage == "staging":
+            return speak(f"I'm still getting the {sess['dish']} ready at {restaurant}.", data={"category": "food_order", "outcome": "staging"})
+        if stage == "staged":
+            return speak(_readback(sess), action_id=sess["action_id"], data={"category": "food_order", "outcome": "staged"})
+        if stage in ("closed", "missing"):
+            return speak(f"{restaurant} is {'closed right now' if stage == 'closed' else 'not on DoorDash'}. Want a different restaurant?", data={"category": "food_order", "outcome": stage})
     try:
-        _begin_restaurant_check(user_id, restaurant, dish)
+        _begin_lookup(user_id, restaurant, dish)
     except Exception:  # noqa: BLE001
-        log.exception("restaurant check failed to start")
-        return speak(
-            f"I couldn't check {restaurant} just now. Want me to try again?",
-            data={"category": "food_order", "outcome": "error"},
-        )
+        log.exception("restaurant lookup failed to start")
+        return speak(f"I couldn't check {restaurant} just now. Want me to try again?", data={"category": "food_order", "outcome": "error"})
     if dish:
-        say = f"I'm checking whether {restaurant} is open before I take the {dish}."
+        say = f"I'm looking for {dish} at {restaurant}. Give me a moment."
     else:
-        say = f"I'm checking whether {restaurant} is open for delivery. I'll tell you what I find."
-    return speak(
-        say,
-        data={"category": "food_order", "outcome": "checking", "restaurant": restaurant, "item": dish},
-    )
+        say = f"I'm checking whether {restaurant} is open. What would you like from there?"
+    return speak(say, data={"category": "food_order", "outcome": "checking", "restaurant": restaurant, "item": dish})
 
 
 @orders.tool()
 def prepare_order(user_id: str, restaurant: str = "", item: str = "", favorite_id: Optional[str] = None) -> str:
-    """Read back a DoorDash order once the restaurant is open and you have the dish, or a saved favorite."""
+    """Repeat the read-back for an order that is ready, or start one from a saved favorite. Not needed after search_food_and_groceries has already read the order back."""
     if favorite_id:
-        _stop_active_order(user_id)
         favorite = _get_favorite(user_id, favorite_id)
         if not favorite:
-            return speak(
-                "I couldn't find that favorite anymore. Want to tell me what you'd like instead?",
-                data={"category": "food_order", "outcome": "error"},
-            )
-        item_name, vendor = favorite["label"], favorite["vendor"] or "DoorDash"
-        price = float(favorite["total"] or 0)
-    else:
-        restaurant = restaurant.strip()
-        item = item.strip()
-        if not restaurant:
-            ask = f"Which restaurant should I order {item} from?" if item else "Which restaurant should I use, and what would you like from there?"
-            return speak(ask, data={"category": "food_order", "outcome": "error"})
-        state = _restaurant_status.get(_restaurant_key(user_id, restaurant), "")
-        if state != "open":
-            if state == "checking":
-                ask = f"I'm still checking whether {restaurant} is open. I'll ask about the food if it can take an order."
-            elif state == "closed":
-                ask = f"{restaurant} is closed right now, so I can't order from there. Want a different restaurant?"
-            elif state == "missing":
-                ask = f"I couldn't find {restaurant} on DoorDash. Want a different restaurant?"
-            elif state == "error":
-                ask = f"I couldn't check {restaurant} just now. Want me to try again?"
-            else:
-                try:
-                    _begin_restaurant_check(user_id, restaurant, item)
-                    ask = f"Let me check whether {restaurant} is open before I take that order."
-                except Exception:  # noqa: BLE001
-                    log.exception("restaurant check failed to start")
-                    ask = f"I couldn't check {restaurant} just now. Want me to try again?"
-            return speak(ask, data={"category": "food_order", "outcome": state or "checking", "restaurant": restaurant})
-        if not item:
-            return speak(
-                f"What would you like from {restaurant}?",
-                data={"category": "food_order", "outcome": "error", "restaurant": restaurant},
-            )
-        _stop_active_order(user_id)
-        item_name, vendor, price = item, restaurant, 0.0
+            return speak("I couldn't find that favorite anymore. Want to tell me what you'd like instead?", data={"category": "food_order", "outcome": "error"})
+        return search_food_and_groceries(user_id, restaurant=favorite["vendor"] or "", dish=favorite["label"])
+    sess = _session(user_id)
+    if sess and sess.get("stage") == "staged" and (not restaurant or _same_restaurant(sess["restaurant"], restaurant)):
+        return speak(_readback(sess), action_id=sess["action_id"], data={"category": "food_order", "outcome": "staged"})
+    if not restaurant:
+        return speak("Which restaurant should I use, and what would you like from there?", data={"category": "food_order", "outcome": "error"})
+    return search_food_and_groceries(user_id, restaurant=restaurant, dish=item)
 
-    decision = policy.check(kind="order", payee=vendor, amount=price, user_id=user_id, message_text=item_name)
-    if decision.needs_approval:
-        approvals.request(
-            user_id=user_id,
-            action="place_order",
-            payload={"item_name": item_name, "vendor": vendor, "price": price, "favorite_id": favorite_id},
-            reason=decision.reason,
-            summary=f"{item_name} from {vendor}",
-        )
-        return speak(
-            f"That one's a bit unusual, so I'm checking with {decision.family_name} first. I'll let you know.",
-            data={"category": "food_order", "outcome": "needs_approval"},
-        )
 
-    action_id = pending.create(
-        "place_order",
-        user_id,
-        item_name=item_name,
-        vendor=vendor,
-        price=price,
-        favorite_id=favorite_id,
-    )
-    if price:
-        readback = f"That's {item_name} from {vendor} for {money_str(price)}, delivered to your home. Should I place it?"
-    else:
-        readback = f"That's {item_name} from {vendor}, delivered to your home. I'll use the price shown at the store. Should I place it?"
-    return speak(readback, action_id=action_id, data={"category": "food_order"})
-
+# --- stage 3: place it -------------------------------------------------------------
 
 @orders.tool()
-def confirm_order(user_id: str, action_id: str) -> str:
-    """Place a previously prepared food or grocery order after the user says yes."""
+def confirm_order(user_id: str, action_id: str = "") -> str:
+    """Place the order that was read back, after the caller clearly says yes. The action id may be left blank."""
+    sess = _session(user_id)
+    action_id = (action_id or "").strip() or (sess.get("action_id", "") if sess else "")
     try:
         payload = pending.consume(action_id, "place_order", user_id)
     except PendingActionError as err:
         return speak(err.say, data={"category": "food_order", "outcome": "error"})
+    if not sess or sess.get("stage") != "staged":
+        return speak("Let me get that order ready first. Which restaurant and what would you like?", data={"category": "food_order", "outcome": "error"})
 
-    item_name = payload["item_name"]
-    vendor = payload.get("vendor") or "DoorDash"
-    app_module = importlib.import_module("main")  # deferred: main imports mcp_servers, which imports this file
-    runner = app_module.app.state.browser_runner
-    staying = False
-    has_parked = getattr(runner, "has_parked", None)
-    if callable(has_parked):
-        staying = bool(has_parked(user_id))
-    if staying:
-        goal = (
-            f"You are already on the {vendor} menu. Stay on this page. "
-            f"Find {item_name} and place the delivery order. "
-            "Do not go back to the home page and do not search for the restaurant again. "
-            "If the exact dish is not listed, choose the closest item on the menu and say which one you chose."
-        )
-    else:
-        goal = (
-            f"On DoorDash, open {vendor} and order {item_name}. "
-            "Choose a real item that is on the page, then place the delivery order. If the exact dish is not listed, choose the closest item on the menu and say which one you chose."
-        )
-    flow_key = payload.get("favorite_id")
-
-    # Captured now, while we're still on the FastAPI event loop (the MCP adapter awaits this
-    # tool). Progress and on_done fire later on the browser agent's worker thread, which has
-    # no event loop of its own, so they hop back onto this one to speak into the live call.
-    try:
-        call_loop: Optional[asyncio.AbstractEventLoop] = asyncio.get_running_loop()
-    except RuntimeError:
-        call_loop = None
-        log.warning("confirm_order for %s has no running event loop; result won't be spoken into a live call", user_id)
-
+    item_name, vendor, price = payload["item_name"], payload.get("vendor") or sess["restaurant"], float(payload.get("price") or 0)
+    call_loop = _call_loop()
+    _set(user_id, stage="placing")
     caller = _caller_name(user_id)
-    notify.notify_family(
-        user_id,
-        f"{caller} asked to place an order for {item_name}. The request to place it has been started.",
+    notify.notify_family(user_id, f"{caller} confirmed an order: {item_name} from {vendor} for {money_str(price)}. Placing it now.")
+    activity.log_event(user_id, "order_requested", f"Placing {item_name} from {vendor}.", {"category": "food_order", "outcome": "placing"})
+    goal = (
+        "You are on the DoorDash checkout page with the item already in the cart. Click the Place Order button. "
+        "Then finish with send_msg_to_user(\"DONE: Order placed, order id <the id shown on the page>\")."
     )
-    activity.log_event(
-        user_id,
-        "order_requested",
-        f"Started an order for {item_name}.",
-        {"category": "food_order", "outcome": "placing"},
-    )
-
-    on_progress = _progress_callback(call_loop, user_id, "I'm still working on your order.")
 
     def on_done(job) -> None:
-        if getattr(job, "status", None) == "cancelled":
-            log.info("order for %s stopped because they asked for something else", user_id)
+        status = getattr(job, "status", "")
+        if status == "cancelled":
             return
-        success = getattr(job, "status", None) == "done"
-
+        success = status == "done"
+        text = (getattr(job, "result_text", "") or "")
+        m = re.search(r"ORD-[\w-]+", text, re.I)
+        order_ref = m.group(0) if m else None
         try:
             db.get_client().table("orders").insert({
-                "user_id": user_id,
-                "vendor": payload["vendor"],
-                "items": [{"name": payload["item_name"], "price": payload["price"]}],
-                "total": payload["price"],
-                "status": "placed" if success else "failed",
+                "user_id": user_id, "vendor": vendor, "items": [{"name": item_name, "price": price}], "total": price,
+                "status": "placed" if success else "failed", "external_id": order_ref,
             }).execute()
         except Exception:  # noqa: BLE001
             log.exception("failed to record order for %s", user_id)
-
-        activity.log_event(
-            user_id,
-            "order",
-            f"Order placed: {payload['item_name']} from {payload['vendor']}"
-            if success else
-            f"Order to {payload['vendor']} failed",
-            {"category": "food_order", "outcome": "placed" if success else "error"},
-        )
-        notify.notify_family(
-            user_id,
-            f"Order placed: {payload['item_name']} from {payload['vendor']}."
-            if success else
-            f"Sorry, the order from {payload['vendor']} didn't go through.",
-        )
-
-        detail = (getattr(job, "result_text", "") or "").removeprefix("DONE:").strip()
-        if success and detail:
-            sentence = detail[0].upper() + detail[1:]
-            if not sentence.endswith("."):
-                sentence += "."
-            message = f"Your order is placed. {sentence}"
-        elif success:
-            message = f"Good news, your order for {item_name} is placed."
+        activity.log_event(user_id, "order", f"Order placed: {item_name} from {vendor}" if success else f"Order to {vendor} failed",
+                           {"category": "food_order", "outcome": "placed" if success else "error", "order_id": order_ref})
+        notify.notify_family(user_id, f"Order placed: {item_name} from {vendor} for {money_str(price)}." if success else f"Sorry, the order from {vendor} didn't go through.")
+        _set(user_id, stage="placed" if success else "error")
+        if success:
+            message = f"Your order is placed. {item_name} from {vendor}" + (f" for {money_str(price)}" if price else "") + " is on its way."
         else:
-            message = f"I had trouble placing your order for {item_name}. Want me to try again?"
+            message = f"I had trouble placing the {item_name}. Want me to try again?"
         _speak_into_call(call_loop, user_id, message, behavior="queue")
 
-    _stop_active_order(user_id)
-    runner.submit(
-        site="dashdish",
-        goal=goal,
-        user_id=user_id,
-        flow_key=flow_key,
-        on_done=on_done,
-        on_progress=on_progress,
-    )
-
-    return speak(
-        f"I'm placing {item_name} on DoorDash now. I'll tell you how it's going.",
-        data={"category": "food_order", "outcome": "placing"},
-    )
+    _runner().submit(site="dashdish", goal=goal, user_id=user_id, replay=False, mode="place", page_name=vendor, on_done=on_done,
+                     on_progress=_progress_callback(call_loop, user_id, "Still placing it, one moment."))
+    return speak(f"Placing the {item_name} now.", data={"category": "food_order", "outcome": "placing"})
 
 
 # ---------------------------------------------------------------------------

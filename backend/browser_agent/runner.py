@@ -59,6 +59,7 @@ class BrowserJob:
     page_name: str = ""
     park_when: str = ""  # only park if the result text contains this (e.g. "OPEN")
     decider: str = ""    # "" = settings.browser_decider | llm | jev
+    mode: str = ""       # lookup | stage | place | order (how the job should finish)
 
     @property
     def ok(self) -> bool:
@@ -82,7 +83,7 @@ def _default_env_factory(site: str, goal: str, headless: bool, lookup: bool = Fa
 
 
 def _default_agent_factory(goal: str, use_screenshot: bool, site: str = "dashdish", lookup: bool = False, stay: bool = False,
-                           decider: str = "", page_name: str = "") -> Any:
+                           decider: str = "", page_name: str = "", mode: str = "") -> Any:
     from browser_agent.agent import LOOKUP_EXAMPLES, LOOKUP_SYSTEM, MuseSparkAgent
     from browser_agent.tasks import goal_with_hints
 
@@ -90,7 +91,7 @@ def _default_agent_factory(goal: str, use_screenshot: bool, site: str = "dashdis
     if (decider or settings.browser_decider) == "jev":
         from browser_agent.jev_agent import JevAgent
 
-        return JevAgent(hinted, lookup=lookup, restaurant=page_name)
+        return JevAgent(hinted, lookup=lookup, restaurant=page_name, mode=mode or ("lookup" if lookup else "order"))
     if lookup:
         return MuseSparkAgent(hinted, use_screenshot=use_screenshot, system_text=LOOKUP_SYSTEM, examples=LOOKUP_EXAMPLES)
     return MuseSparkAgent(hinted, use_screenshot=use_screenshot)
@@ -173,9 +174,9 @@ class BrowserJobRunner:
     # --- API ---------------------------------------------------------------
     def submit(self, site: str, goal: str, user_id: str | None = None, on_done: Callable | None = None,
                flow_key: str | None = None, replay: bool = True, on_progress: Callable | None = None,
-               lookup: bool = False, park: bool = False, page_name: str = "", park_when: str = "", decider: str = "") -> BrowserJob:
+               lookup: bool = False, park: bool = False, page_name: str = "", park_when: str = "", decider: str = "", mode: str = "") -> BrowserJob:
         job = BrowserJob(site=site, goal=goal, user_id=user_id, on_done=on_done, flow_key=flow_key, replay=replay,
-                         on_progress=on_progress, lookup=lookup, park=park, page_name=page_name, park_when=park_when, decider=decider)
+                         on_progress=on_progress, lookup=lookup, park=park, page_name=page_name, park_when=park_when, decider=decider, mode=mode)
         self._jobs[job.id] = job
         self.start()
         self._queue.put(job)
@@ -200,10 +201,10 @@ class BrowserJobRunner:
     def run_now(self, site: str, goal: str, user_id: str | None = None, headless: bool | None = None,
                 use_screenshot: bool | None = None, max_steps: int | None = None,
                 flow_key: str | None = None, replay: bool = True, lookup: bool = False,
-                park: bool = False, page_name: str = "", park_when: str = "", decider: str = "") -> BrowserJob:
+                park: bool = False, page_name: str = "", park_when: str = "", decider: str = "", mode: str = "") -> BrowserJob:
         """Run a job on the calling thread (CLI and tests)."""
         job = BrowserJob(site=site, goal=goal, user_id=user_id, flow_key=flow_key, replay=replay,
-                         lookup=lookup, park=park, page_name=page_name, park_when=park_when, decider=decider)
+                         lookup=lookup, park=park, page_name=page_name, park_when=park_when, decider=decider, mode=mode)
         self._jobs[job.id] = job
         self._execute(job, headless=headless, use_screenshot=use_screenshot, max_steps=max_steps)
         return job
@@ -211,7 +212,7 @@ class BrowserJobRunner:
     # --- execution ---------------------------------------------------------
     def _make_agent(self, job: BrowserJob, use_screenshot: bool) -> Any:
         if self._agent_factory is _default_agent_factory:
-            return self._agent_factory(job.goal, use_screenshot, job.site, job.lookup, job.stay, job.decider, job.page_name)
+            return self._agent_factory(job.goal, use_screenshot, job.site, job.lookup, job.stay, job.decider, job.page_name, job.mode)
         return self._agent_factory(job.goal, use_screenshot)
 
     def _claim_page(self, job: BrowserJob) -> tuple[_ParkedPage | None, _ParkedPage | None]:
