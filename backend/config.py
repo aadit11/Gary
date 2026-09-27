@@ -52,7 +52,7 @@ class Settings(BaseSettings):
 
     # Voice agent (Deepgram Voice Agent API)
     deepgram_agent_url: str = "wss://agent.deepgram.com/v1/agent/converse"
-    deepgram_think_model: str = "gpt-4o-mini"     # Deepgram-managed OpenAI model
+    deepgram_think_model: str = "gpt-4.1"         # Deepgram-managed OpenAI model; 4o-mini invents tool results, 4.1 follows the rules
     deepgram_voice: str = "flux-cole-en"          # Deepgram speak model (v2)
     port: int = 8000                              # local port; the MCP adapter connects over loopback
 
