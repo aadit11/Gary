@@ -4,6 +4,10 @@ Run from backend/:  uv run python scripts/seed_demo_user.py
 Idempotent: reuses the user if the phone already exists. Prints DEMO_USER_ID for .env.
 
 Edit DEMO below to match the team's shared demo persona and the real family phone.
+
+Bills here let teammates demo list_bills_due without Google. After Gmail ingest,
+ingestion skips inserting a bill when the same payee+amount+due_date already exists,
+so City Electric / Sunrise Pharmacy will not be doubled.
 """
 
 from __future__ import annotations
