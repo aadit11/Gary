@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     # Voice agent (Deepgram Voice Agent API)
     deepgram_agent_url: str = "wss://agent.deepgram.com/v1/agent/converse"
     deepgram_think_model: str = "gpt-4o-mini"     # Deepgram-managed OpenAI model
-    deepgram_voice: str = "flux-alexis-en"        # Deepgram speak model (v2)
+    deepgram_voice: str = "flux-cole-en"          # Deepgram speak model (v2)
     port: int = 8000                              # local port; the MCP adapter connects over loopback
 
     # Browser agent (Muse Spark on Meta Model API driving REAL clones)

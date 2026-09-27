@@ -27,7 +27,7 @@ VOICES: dict[str, dict[str, str]] = {
     "en": {
         "language": "en",
         "listen_model": "flux-general-en",
-        "speak_model": "flux-alexis-en",
+        "speak_model": "flux-cole-en",
     }
 }
 

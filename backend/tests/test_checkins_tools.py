@@ -10,7 +10,7 @@ from mcp_servers.checkins import (
     prepare_caregiver_transfer,
     summarize_for_family,
 )
-from scheduler.jobs import run_due_appointments, run_reminder_followups
+from scheduler.jobs import due_reminders, run_due_appointments, run_due_expenses, run_reminder_followups
 
 
 def _say(raw: str) -> dict:
@@ -125,3 +125,48 @@ def test_appointment_reminder_once_at_nine(demo, fake_db, monkeypatch):
     assert len(calls) == 1
     logged = fake_db.table("activity_log").select("*").eq("kind", "appointment_reminded").execute().data
     assert logged[0]["data"]["email_id"] == email["id"]
+
+
+def test_weekly_reminder_only_on_chosen_day(demo, fake_db):
+    reminder = fake_db.table("reminders").insert(
+        {"user_id": demo["user_id"], "message": "Time for a glass of water.", "time_of_day": "08:00", "recurrence": "weekly", "active": True}
+    ).execute().data[0]
+    fake_db.table("emails").insert(
+        {
+            "user_id": demo["user_id"],
+            "gmail_id": "caregiver-profile",
+            "classification": "other",
+            "extracted": {"weekly_days": {reminder["id"]: 0}},
+        }
+    ).execute()
+    monday = datetime(2026, 9, 28, 12, 0, tzinfo=timezone.utc)
+    tuesday = datetime(2026, 9, 29, 12, 0, tzinfo=timezone.utc)
+    assert [row["id"] for row in due_reminders(monday)] == [reminder["id"]]
+    assert due_reminders(tuesday) == []
+
+
+def test_expense_reminder_once_for_caregiver(demo, fake_db, monkeypatch):
+    notes = []
+    calls = []
+    monkeypatch.setattr("scheduler.jobs.notify.notify_family", lambda *args, **kwargs: notes.append(args) or [])
+    monkeypatch.setattr("voice.twilio_routes.place_outbound_call", lambda *args, **kwargs: calls.append(args) or "CAX")
+    fake_db.table("emails").insert(
+        {
+            "user_id": demo["user_id"],
+            "gmail_id": "caregiver-profile",
+            "classification": "other",
+            "extracted": {
+                "notify_expenses": True,
+                "expenses": [
+                    {"category": "rent", "due_day": 28, "active": True},
+                    {"category": "utilities", "due_day": 1, "active": True},
+                ],
+            },
+        }
+    ).execute()
+    nine = datetime(2026, 9, 28, 13, 0, tzinfo=timezone.utc)
+    assert run_due_expenses(nine) == 1
+    assert calls == []
+    assert notes and "rent" in notes[0][1] and "reminder only" in notes[0][1]
+    assert run_due_expenses(nine) == 0
+    assert len(notes) == 1

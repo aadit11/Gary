@@ -2,8 +2,10 @@
 
 Every minute: for each active reminder whose time_of_day (in the user's timezone) matches the
 current minute and that has no reminder_logs row for today, log it and place the call.
+A weekly reminder only fires on the weekday saved in the caregiver profile.
 A reminder that is still unanswered after 15 minutes is called once more. If it is still
 unconfirmed after that, the caregiver gets one message. Appointments are called at 9:00 local.
+Regular bills also text the caregiver at 9:00 local. They are reminders only.
 """
 
 from __future__ import annotations
@@ -21,6 +23,15 @@ log = logging.getLogger(__name__)
 
 RETRY_AFTER = timedelta(minutes=15)
 ALERT_AFTER = timedelta(minutes=30)
+PROFILE_GMAIL_ID = "caregiver-profile"
+EXPENSE_LABELS = {
+    "rent": "rent",
+    "utilities": "utilities",
+    "groceries": "groceries",
+    "pharmacy": "pharmacy",
+    "phone": "phone",
+    "insurance": "insurance",
+}
 
 
 def _user_tz(user_id: str, cache: dict) -> str:
@@ -30,11 +41,22 @@ def _user_tz(user_id: str, cache: dict) -> str:
     return cache[user_id]
 
 
+def _care_profiles(client) -> dict[str, dict]:
+    rows = client.table("emails").select("*").eq("gmail_id", PROFILE_GMAIL_ID).execute().data
+    found: dict[str, dict] = {}
+    for row in rows:
+        extra = row.get("extracted") or {}
+        if isinstance(extra, dict):
+            found[row["user_id"]] = extra
+    return found
+
+
 def due_reminders(now_utc: datetime | None = None) -> list[dict]:
     """Active reminders due this minute (user-local) without a log entry today."""
     now_utc = now_utc or datetime.now(timezone.utc)
     client = db.get_client()
     reminders = client.table("reminders").select("*").eq("active", True).execute().data
+    profiles = _care_profiles(client)
     tz_cache: dict = {}
     due = []
     for r in reminders:
@@ -44,6 +66,15 @@ def due_reminders(now_utc: datetime | None = None) -> list[dict]:
             continue
         if r.get("recurrence") == "weekdays" and local.weekday() >= 5:
             continue
+        if r.get("recurrence") == "weekly":
+            days = (profiles.get(r["user_id"]) or {}).get("weekly_days") or {}
+            day = days.get(r["id"]) if isinstance(days, dict) else None
+            try:
+                chosen = int(day) if day is not None else None
+            except (TypeError, ValueError):
+                chosen = None
+            if chosen is None or chosen != local.weekday():
+                continue
         today_prefix = local.date().isoformat()
         logs = client.table("reminder_logs").select("*").eq("reminder_id", r["id"]).execute().data
         if any(str(l.get("scheduled_for", "")).startswith(today_prefix) for l in logs):
@@ -178,11 +209,54 @@ def run_due_appointments(now_utc: datetime | None = None) -> int:
     return count
 
 
+def run_due_expenses(now_utc: datetime | None = None) -> int:
+    """At 9:00 local, text the caregiver once about each regular bill due today."""
+    now_utc = now_utc or datetime.now(timezone.utc)
+    client = db.get_client()
+    tz_cache: dict = {}
+    count = 0
+    for row in client.table("emails").select("*").eq("gmail_id", PROFILE_GMAIL_ID).execute().data:
+        extra = row.get("extracted") or {}
+        if not isinstance(extra, dict) or extra.get("notify_expenses") is False:
+            continue
+        tz = ZoneInfo(_user_tz(row["user_id"], tz_cache))
+        local_now = now_utc.astimezone(tz)
+        if local_now.strftime("%H:%M") != "09:00":
+            continue
+        day = local_now.date().isoformat()
+        prior = client.table("activity_log").select("*").eq("user_id", row["user_id"]).eq("kind", "expense_reminded").execute().data
+        name = _first_name(row["user_id"])
+        for expense in extra.get("expenses") or []:
+            if not isinstance(expense, dict) or not expense.get("active"):
+                continue
+            try:
+                due_day = int(expense.get("due_day"))
+            except (TypeError, ValueError):
+                continue
+            if due_day != local_now.day:
+                continue
+            category = str(expense.get("category") or "")
+            if any((item.get("data") or {}).get("category") == category and (item.get("data") or {}).get("local_date") == day for item in prior):
+                continue
+            label = EXPENSE_LABELS.get(category, category.replace("_", " "))
+            message = f"{name}'s {label} is due today. This is a reminder only."
+            notify.notify_family(row["user_id"], message)
+            activity.log_event(
+                row["user_id"],
+                "expense_reminded",
+                message,
+                {"category": category, "local_date": day, "outcome": "reminder_only"},
+            )
+            count += 1
+    return count
+
+
 def start_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(run_due_reminders, "interval", seconds=60, id="due_reminders", max_instances=1)
     scheduler.add_job(run_reminder_followups, "interval", seconds=60, id="reminder_followups", max_instances=1)
     scheduler.add_job(run_due_appointments, "interval", seconds=60, id="due_appointments", max_instances=1)
+    scheduler.add_job(run_due_expenses, "interval", seconds=60, id="due_expenses", max_instances=1)
     scheduler.start()
     log.info("scheduler started")
     return scheduler
