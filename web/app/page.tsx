@@ -28,7 +28,7 @@ export default async function Home() {
             </div>
           </div>
         </div>
-        <img src="/care-morning.png" alt="Soft morning light on a wooden table, with tea and a small sprig of leaves" />
+        <img src="/logo.png" className="hero-logo" alt="The Gary logo: a palm tree wearing a phone headset, with a calendar, a checklist, and a heart orbiting its trunk" />
       </section>
       <div className="cards">
         <div className="card">
