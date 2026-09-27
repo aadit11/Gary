@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CareProfile } from "@/lib/profile";
 import { PROVIDERS, type Key } from "@/lib/providers";
+import { PlaceList, TextList } from "@/components/ListEditor";
 
 type Phase = "idle" | "connecting" | "connected";
 
@@ -16,7 +17,7 @@ export default function Onboarding({ initial, person }: { initial: CareProfile; 
   const provider = PROVIDERS[step];
   const last = step === PROVIDERS.length - 1;
 
-  function setConnector(key: Key, patch: Record<string, string | boolean>) {
+  function setConnector(key: Key, patch: Record<string, unknown>) {
     setProfile((p) => ({ ...p, connectors: { ...p.connectors, [key]: { ...p.connectors[key], ...patch } } }));
   }
 
@@ -106,11 +107,20 @@ export default function Onboarding({ initial, person }: { initial: CareProfile; 
               {provider.key === "uber" && (
                 <>
                   <label>Home<input value={c.uber.home} onChange={(e) => setConnector("uber", { home: e.target.value })} /></label>
-                  <label>Doctor or hospital<input value={c.uber.hospital} onChange={(e) => setConnector("uber", { hospital: e.target.value })} placeholder="Springfield General" /></label>
+                  <div className="group">
+                    Other places {person} goes
+                    <PlaceList items={c.uber.places} onChange={(places) => setConnector("uber", { places })} />
+                  </div>
                 </>
               )}
               {provider.key === "groceries" && (
-                <label>Usual store<input value={c.groceries.store} onChange={(e) => setConnector("groceries", { store: e.target.value })} placeholder="Sunrise Market" /></label>
+                <>
+                  <label>Usual store<input value={c.groceries.store} onChange={(e) => setConnector("groceries", { store: e.target.value })} placeholder="Sunrise Market" /></label>
+                  <div className="group">
+                    Dietary restrictions
+                    <TextList items={c.groceries.restrictions} onChange={(restrictions) => setConnector("groceries", { restrictions })} placeholder="e.g. shrimp allergy, no desserts" addLabel="Add a restriction" />
+                  </div>
+                </>
               )}
             </div>
             <div className="connect-actions">

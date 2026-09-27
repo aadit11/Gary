@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PROVIDERS } from "@/lib/providers";
+import { PlaceList, TextList } from "@/components/ListEditor";
 import Link from "next/link";
 import {
   DIET_OPTIONS,
@@ -113,14 +114,17 @@ export default function ProfileEditor({ initial, person, startTab = "settings" }
           <div className="stack">
             <article className="decision">
               <label className="choice">
-                <input type="checkbox" checked={profile.connectors.doordash.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, doordash: { ...profile.connectors.doordash, connected: e.target.checked } } })} />
-                <span className="conn-row"><img src={PROVIDERS.find((p) => p.key === "doordash")!.logo} alt="" /><strong>{PROVIDERS.find((p) => p.key === "doordash")!.name}</strong></span>
+                <input type="checkbox" checked={profile.connectors.groceries.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, groceries: { ...profile.connectors.groceries, connected: e.target.checked } } })} />
+                <span className="conn-row"><img src={PROVIDERS.find((p) => p.key === "groceries")!.logo} alt="" /><strong>{PROVIDERS.find((p) => p.key === "groceries")!.name}</strong></span>
               </label>
-              {profile.connectors.doordash.connected && (
-                <label>
-                  Usual order
-                  <input value={profile.connectors.doordash.usual} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, doordash: { ...profile.connectors.doordash, usual: e.target.value } } })} placeholder="Chicken soup and tea" />
-                </label>
+              {profile.connectors.groceries.connected && (
+                <div className="fields">
+                  <label>Usual store<input value={profile.connectors.groceries.store} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, groceries: { ...profile.connectors.groceries, store: e.target.value } } })} placeholder="Sunrise Market" /></label>
+                  <div className="group">
+                    Dietary restrictions
+                    <TextList items={profile.connectors.groceries.restrictions} onChange={(restrictions) => setProfile({ ...profile, connectors: { ...profile.connectors, groceries: { ...profile.connectors.groceries, restrictions } } })} placeholder="e.g. shrimp allergy, no desserts" addLabel="Add a restriction" />
+                  </div>
+                </div>
               )}
             </article>
             <article className="decision">
@@ -129,19 +133,24 @@ export default function ProfileEditor({ initial, person, startTab = "settings" }
                 <span className="conn-row"><img src={PROVIDERS.find((p) => p.key === "uber")!.logo} alt="" /><strong>{PROVIDERS.find((p) => p.key === "uber")!.name}</strong></span>
               </label>
               {profile.connectors.uber.connected && (
-                <>
+                <div className="fields">
                   <label>Home<input value={profile.connectors.uber.home} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, uber: { ...profile.connectors.uber, home: e.target.value } } })} /></label>
-                  <label>Hospital<input value={profile.connectors.uber.hospital} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, uber: { ...profile.connectors.uber, hospital: e.target.value } } })} placeholder="Springfield General" /></label>
-                </>
+                  <div className="group">
+                    Other places
+                    <PlaceList items={profile.connectors.uber.places} onChange={(places) => setProfile({ ...profile, connectors: { ...profile.connectors, uber: { ...profile.connectors.uber, places } } })} />
+                  </div>
+                </div>
               )}
             </article>
             <article className="decision">
               <label className="choice">
-                <input type="checkbox" checked={profile.connectors.groceries.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, groceries: { ...profile.connectors.groceries, connected: e.target.checked } } })} />
-                <span className="conn-row"><img src={PROVIDERS.find((p) => p.key === "groceries")!.logo} alt="" /><strong>{PROVIDERS.find((p) => p.key === "groceries")!.name}</strong></span>
+                <input type="checkbox" checked={profile.connectors.doordash.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, doordash: { ...profile.connectors.doordash, connected: e.target.checked } } })} />
+                <span className="conn-row"><img src={PROVIDERS.find((p) => p.key === "doordash")!.logo} alt="" /><strong>{PROVIDERS.find((p) => p.key === "doordash")!.name}</strong></span>
               </label>
-              {profile.connectors.groceries.connected && (
-                <label>Store<input value={profile.connectors.groceries.store} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, groceries: { ...profile.connectors.groceries, store: e.target.value } } })} placeholder="Sunrise Market" /></label>
+              {profile.connectors.doordash.connected && (
+                <div className="fields">
+                  <label>Usual order<input value={profile.connectors.doordash.usual} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, doordash: { ...profile.connectors.doordash, usual: e.target.value } } })} placeholder="Chicken soup and tea" /></label>
+                </div>
               )}
             </article>
             <article className="decision">

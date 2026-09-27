@@ -26,6 +26,7 @@ export const EXPENSE_CATEGORIES = [
 export const TIMEZONES = ["America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles"];
 
 export type ExpenseChoice = { category: string; due_day: number; active: boolean };
+export type Place = { label: string; address: string };
 
 export type CareProfile = {
   dietary: string[];
@@ -33,8 +34,8 @@ export type CareProfile = {
   notify_expenses: boolean;
   connectors: {
     doordash: { connected: boolean; usual: string };
-    uber: { connected: boolean; home: string; hospital: string };
-    groceries: { connected: boolean; store: string };
+    uber: { connected: boolean; home: string; hospital: string; places: Place[] };
+    groceries: { connected: boolean; store: string; restrictions: string[] };
     banking: { connected: boolean };
   };
   weekly_days: Record<string, number>;
@@ -48,13 +49,32 @@ export function emptyProfile(home = ""): CareProfile {
     notify_expenses: true,
     connectors: {
       doordash: { connected: false, usual: "" },
-      uber: { connected: false, home, hospital: "" },
-      groceries: { connected: false, store: "" },
+      uber: { connected: false, home, hospital: "", places: [] },
+      groceries: { connected: false, store: "", restrictions: [] },
       banking: { connected: false },
     },
     weekly_days: {},
     onboarded: false,
   };
+}
+
+function cleanList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((v) => String(v ?? "").trim()).filter(Boolean).slice(0, 20);
+}
+
+function cleanPlaces(raw: unknown, legacyHospital?: unknown): Place[] {
+  const places = Array.isArray(raw)
+    ? raw
+        .map((v) => ({ label: String((v as Place)?.label ?? "").trim(), address: String((v as Place)?.address ?? "").trim() }))
+        .filter((v) => v.label || v.address)
+        .slice(0, 20)
+    : [];
+  // Older profiles stored a single "hospital" field; carry it over as the first place.
+  if (!places.length && typeof legacyHospital === "string" && legacyHospital.trim()) {
+    places.push({ label: "Doctor or hospital", address: legacyHospital.trim() });
+  }
+  return places;
 }
 
 function asProfile(raw: unknown, home = ""): CareProfile {
@@ -80,8 +100,13 @@ function asProfile(raw: unknown, home = ""): CareProfile {
         connected: Boolean(body.connectors?.uber?.connected),
         home: body.connectors?.uber?.home || home,
         hospital: body.connectors?.uber?.hospital || "",
+        places: cleanPlaces(body.connectors?.uber?.places, body.connectors?.uber?.hospital),
       },
-      groceries: { connected: Boolean(body.connectors?.groceries?.connected), store: body.connectors?.groceries?.store || "" },
+      groceries: {
+        connected: Boolean(body.connectors?.groceries?.connected),
+        store: body.connectors?.groceries?.store || "",
+        restrictions: cleanList(body.connectors?.groceries?.restrictions),
+      },
       banking: { connected: Boolean(body.connectors?.banking?.connected) },
     },
     weekly_days: body.weekly_days && typeof body.weekly_days === "object" ? body.weekly_days : {},

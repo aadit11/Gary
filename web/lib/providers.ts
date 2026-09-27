@@ -11,12 +11,12 @@ export const PROVIDERS: {
   bullets: string[];
 }[] = [
   {
-    key: "doordash",
-    name: "DoorDash",
-    logo: "https://cdn.simpleicons.org/doordash/FF3008",
-    color: "#FF3008",
-    does: "order food",
-    bullets: ["Order dinner, or \"the usual\", by phone", "Reads the order and total back before placing it", "Anything unusual waits for your okay"],
+    key: "groceries",
+    name: "Instacart",
+    logo: "https://cdn.simpleicons.org/instacart/43B02A",
+    color: "#43B02A",
+    does: "get groceries",
+    bullets: ["Restock essentials from the usual store", "Reads every item and the total back first", "Large or new orders wait for your okay"],
   },
   {
     key: "uber",
@@ -27,12 +27,11 @@ export const PROVIDERS: {
     bullets: ["Book a ride to the doctor or the pharmacy", "Says the car and driver out loud when it's on the way", "You get a message with every trip"],
   },
   {
-    key: "groceries",
-    name: "Instacart",
-    logo: "https://cdn.simpleicons.org/instacart/43B02A",
-    color: "#43B02A",
-    does: "get groceries",
-    bullets: ["Restock essentials from the usual store", "Reads every item and the total back first", "Large or new orders wait for your okay"],
+    key: "doordash",
+    name: "DoorDash",
+    logo: "https://cdn.simpleicons.org/doordash/FF3008",
+    color: "#FF3008",
+    does: "order food",
+    bullets: ["Order dinner, or \"the usual\", by phone", "Reads the order and total back before placing it", "Anything unusual waits for your okay"],
   },
 ];
-
