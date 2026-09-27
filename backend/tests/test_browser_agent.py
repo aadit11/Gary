@@ -175,6 +175,43 @@ def test_runner_step_limit_and_crash():
     assert job.status == "failed" and "no browser" in job.error
 
 
+def test_open_restaurant_page_is_reused_for_the_dish(demo):
+    from browser_agent.tasks import goal_with_hints
+
+    stay = goal_with_hints("dashdish", "order wings", stay=True)
+    assert "already on the restaurant page" in stay
+    assert "search box at the top to find the restaurant" not in stay
+
+    env = FakeEnv()
+    resets = {"n": 0}
+    original_reset = env.reset
+
+    def reset():
+        resets["n"] += 1
+        return original_reset()
+
+    env.reset = reset
+    made = {"n": 0}
+
+    def agents(goal, _ss):
+        made["n"] += 1
+        if made["n"] == 1:
+            return FakeAgent([['send_msg_to_user("DONE: OPEN. Wingstop can take a delivery order.")']])
+        return FakeAgent([['click("9")', 'send_msg_to_user("DONE: ordered wings")']])
+
+    runner = BrowserJobRunner(env_factory=lambda s, g, h: env, agent_factory=agents)
+    lookup = runner.run_now("dashdish", "look up Wingstop", user_id=demo["user_id"], lookup=True, park=True, page_name="Wingstop")
+    assert lookup.ok and not env.closed and runner.has_parked(demo["user_id"])
+    assert resets["n"] == 1
+
+    order = runner.run_now("dashdish", "order wings from Wingstop", user_id=demo["user_id"])
+    assert order.ok and order.stay and env.closed
+    assert resets["n"] == 1
+    assert env.stepped == ['click("9")']
+    assert "already on the Wingstop page" in order.goal
+    assert "do not go back to the home page" in order.goal.lower()
+
+
 def test_compress_executed_collapses_navigation_prefix():
     from browser_agent.flows import compress_executed
     ex = [

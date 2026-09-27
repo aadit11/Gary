@@ -46,6 +46,7 @@ class VoiceAgentSession:
         self.settings_sent = False
         self.last_category: str = "unknown"
         self.last_outcome: str = "unknown"
+        self.order_updates_paused = False
 
     # --- entry point -----------------------------------------------------
     async def run(self) -> None:
@@ -188,7 +189,10 @@ class VoiceAgentSession:
         """Return False to end the call."""
         t = msg.get("type")
         if t == "UserStartedSpeaking":
+            self.order_updates_paused = True
             await self.clear_twilio_audio()
+        elif t == "AgentAudioDone":
+            self.order_updates_paused = False
         elif t == "FunctionCallRequest":
             functions = msg.get("functions") or []
             if not functions:
@@ -215,7 +219,7 @@ class VoiceAgentSession:
             return False
         elif t == "Warning":
             log.warning("call %s: deepgram warning %s", self.call_sid, msg)
-        elif t in ("Welcome", "SettingsApplied", "AgentThinking", "AgentStartedSpeaking", "AgentAudioDone", "PromptUpdated", "History", "LatencyReport"):
+        elif t in ("Welcome", "SettingsApplied", "AgentThinking", "AgentStartedSpeaking", "PromptUpdated", "History", "LatencyReport"):
             pass
         else:
             log.debug("call %s: unhandled deepgram message %s", self.call_sid, t)

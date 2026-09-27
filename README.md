@@ -59,7 +59,7 @@ The file lives at the repo root. Both `backend/` and `web/` read it.
 | `SUPABASE_URL` | Supabase, Project Settings, Data API, "Project URL" | Just `https://xxxx.supabase.co`. No `/rest/v1` on the end. |
 | `SUPABASE_SERVICE_KEY` | Same page, the **secret** / service_role key | Never the publishable (anon) key. Never commit it. |
 | `SUPABASE_ANON_KEY` | Same page, the **publishable** / anon key | Used only by the web dashboard in the browser. |
-| `META_API_KEY` | dev.meta.ai | Muse Spark, the model that operates the DashDish and Udriver clones. |
+| `OPENROUTER_API_KEY` | openrouter.ai | Claude Haiku 4.5, the model that operates the DashDish and Udriver clones. |
 | `BROWSER_HEADLESS` | `false` for the demo | Shows the Chromium window while the agent orders. |
 | `PUBLIC_BASE_URL` | Your ngrok URL once it's running | e.g. `https://abc123.ngrok-free.dev`. Changes every ngrok restart on the free plan. |
 | `MOCK_SERVICES_BASE_URL` | Where `web/` is running | `http://localhost:3000` locally. |

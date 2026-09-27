@@ -29,13 +29,18 @@ class FakeBrowserRunner:
     """Captures submit() calls; finish() lets a test trigger on_done manually
     instead of actually driving a browser."""
 
+    def submit(self, site, goal, user_id, flow_key=None, on_done=None, on_progress=None, replay=True, lookup=False, park=False, page_name=""):
+        self.submitted.append({"site": site, "goal": goal, "user_id": user_id, "flow_key": flow_key, "lookup": lookup})
+        self._last_on_done = on_done
+        self.on_progress = on_progress
+
+    def cancel_for_user(self, user_id):
+        self.cancelled.append(user_id)
+
     def __init__(self):
         self.submitted = []
+        self.cancelled = []
         self._last_on_done = None
-
-    def submit(self, site, goal, user_id, flow_key=None, on_done=None):
-        self.submitted.append({"site": site, "goal": goal, "user_id": user_id, "flow_key": flow_key})
-        self._last_on_done = on_done
 
     def finish(self, job=None):
         self._last_on_done(job or FakeJob())
@@ -103,28 +108,85 @@ def test_get_favorite_orders_lists_saved_favorite(demo, fake_db):
 
 # --- food & groceries ---------------------------------------------------------
 
-def test_search_food_and_groceries_returns_options(demo):
-    result = orders.search_food_and_groceries(demo["user_id"], "soup")
-    say = _say(result)
-    assert "Tomato Basil Soup" in say and "Souvla" in say and "8.50" in say
+def test_new_search_stops_the_order_being_placed(demo, fake_runner):
+    orders.search_food_and_groceries(demo["user_id"], restaurant="Panera Bread")
+    assert fake_runner.cancelled == [demo["user_id"]]
 
 
-def test_prepare_order_by_catalog_item_creates_pending_action(demo):
-    result = json.loads(orders.prepare_order(demo["user_id"], catalog_item_id="f2"))
+def _mark_open(user_id, restaurant="Panera Bread"):
+    orders._restaurant_status[(user_id, restaurant.casefold())] = "open"
+
+
+def test_search_restaurant_checks_before_asking_for_a_dish(demo, fake_runner):
+    result = orders.search_food_and_groceries(demo["user_id"], restaurant="Panera Bread")
+    say = _say(result).lower()
+    assert "checking" in say and "panera bread" in say
+    assert "what would you like" not in say
+    assert fake_runner.submitted[0]["lookup"] is True
+    assert "DONE: OPEN" in fake_runner.submitted[0]["goal"]
+    assert "do not place an order" in fake_runner.submitted[0]["goal"].lower()
+
+
+def test_closed_restaurant_does_not_ask_for_a_dish(demo, fake_runner):
+    orders.search_food_and_groceries(demo["user_id"], restaurant="Panera Bread")
+    fake_runner.finish(FakeJob(status="done", result_text="DONE: CLOSED. Panera Bread is closed."))
+    result = orders.prepare_order(demo["user_id"], restaurant="Panera Bread", item="broccoli cheddar soup")
+    say = _say(result).lower()
+    assert "closed" in say
+    assert "what would you like" not in say
+    assert "action_id" not in json.loads(result)
+
+
+@pytest.mark.asyncio
+async def test_open_restaurant_then_asks_for_the_dish(demo, fake_runner):
+    from voice.bridge import ACTIVE_SESSIONS
+
+    class FakeSession:
+        def __init__(self):
+            self.injected = []
+            self.order_updates_paused = False
+
+        async def inject(self, text, behavior="interrupt"):
+            self.injected.append(text)
+
+    session = FakeSession()
+    ACTIVE_SESSIONS[demo["user_id"]] = session
+    try:
+        orders.search_food_and_groceries(demo["user_id"], restaurant="Panera Bread")
+        fake_runner.finish(FakeJob(status="done", result_text="DONE: OPEN. Panera Bread can take a delivery order."))
+        await asyncio.sleep(0.05)
+        assert any("what would you like" in line.lower() for line in session.injected)
+        prepared = json.loads(orders.prepare_order(demo["user_id"], restaurant="Panera Bread", item="broccoli cheddar soup"))
+        assert prepared["action_id"]
+        assert "broccoli cheddar soup" in prepared["say"]
+    finally:
+        ACTIVE_SESSIONS.pop(demo["user_id"], None)
+
+
+def test_search_dish_asks_for_the_restaurant(demo):
+    result = orders.search_food_and_groceries(demo["user_id"], dish="pizza")
+    say = _say(result).lower()
+    assert "pizza" in say and "which restaurant" in say
+
+
+def test_prepare_order_by_description_creates_pending_action(demo):
+    _mark_open(demo["user_id"])
+    result = json.loads(orders.prepare_order(demo["user_id"], restaurant="Panera Bread", item="broccoli cheddar soup"))
     assert result["action_id"]
-    assert "8.50" in result["say"]
+    assert "broccoli cheddar soup" in result["say"] and "Panera Bread" in result["say"]
 
 
-def test_prepare_order_unknown_item_is_friendly(demo):
-    result = orders.prepare_order(demo["user_id"], catalog_item_id="does-not-exist")
-    assert "couldn't find" in _say(result).lower()
+def test_prepare_order_without_a_dish_asks(demo):
+    _mark_open(demo["user_id"])
+    result = orders.prepare_order(demo["user_id"], restaurant="Panera Bread")
+    assert "what would you like" in _say(result).lower()
+    assert "action_id" not in json.loads(result)
     assert _data(result)["outcome"] == "error"
 
 
-def test_prepare_order_over_limit_requests_approval(demo, monkeypatch):
-    monkeypatch.setattr("clients.mock_services.get_food_item",
-                         lambda item_id: {"id": "big", "name": "Fancy Feast", "vendor": "New Vendor", "price": 500.0})
-    result = orders.prepare_order(demo["user_id"], catalog_item_id="big")
+def test_prepare_order_scam_request_needs_approval(demo):
+    _mark_open(demo["user_id"], "Corner Store")
+    result = orders.prepare_order(demo["user_id"], restaurant="Corner Store", item="a stack of gift cards")
     assert "checking with" in _say(result).lower()
     assert _data(result)["outcome"] == "needs_approval"
 
@@ -134,31 +196,38 @@ def test_confirm_order_rejects_unknown_action_id(demo):
     assert _data(result)["outcome"] == "error"
 
 
-def test_confirm_order_submits_browser_job(demo, fake_runner):
-    prepared = json.loads(orders.prepare_order(demo["user_id"], catalog_item_id="f2"))
+def test_confirm_order_submits_browser_job(demo, fake_runner, monkeypatch):
+    notes = []
+    monkeypatch.setattr(orders.notify, "notify_family", lambda *args, **kwargs: notes.append(args) or [])
+    _mark_open(demo["user_id"])
+    prepared = json.loads(orders.prepare_order(demo["user_id"], restaurant="Panera Bread", item="tomato soup"))
     result = orders.confirm_order(demo["user_id"], prepared["action_id"])
 
-    assert "placing your order" in _say(result).lower()
+    assert "placing" in _say(result).lower() and "doordash" in _say(result).lower()
     assert fake_runner.submitted[0]["site"] == "dashdish"
-    assert "Tomato Basil Soup" in fake_runner.submitted[0]["goal"]
+    assert "tomato soup" in fake_runner.submitted[0]["goal"]
+    assert "Panera Bread" in fake_runner.submitted[0]["goal"]
+    assert notes and "started" in notes[0][1]
 
     # Simulate the background browser job finishing successfully.
     fake_runner.finish(FakeJob(status="done"))
 
 
 def test_confirm_order_records_result_in_orders_table(demo, fake_runner, fake_db):
-    prepared = json.loads(orders.prepare_order(demo["user_id"], catalog_item_id="f2"))
+    _mark_open(demo["user_id"])
+    prepared = json.loads(orders.prepare_order(demo["user_id"], restaurant="Panera Bread", item="tomato soup"))
     orders.confirm_order(demo["user_id"], prepared["action_id"])
     fake_runner.finish(FakeJob(status="done"))
 
     rows = fake_db.table("orders").select("*").eq("user_id", demo["user_id"]).execute().data
     assert len(rows) == 1
     assert rows[0]["status"] == "placed"
-    assert rows[0]["vendor"] == "Souvla"
+    assert rows[0]["vendor"] == "Panera Bread"
 
 
 def test_confirm_order_records_failure(demo, fake_runner, fake_db):
-    prepared = json.loads(orders.prepare_order(demo["user_id"], catalog_item_id="f2"))
+    _mark_open(demo["user_id"])
+    prepared = json.loads(orders.prepare_order(demo["user_id"], restaurant="Panera Bread", item="tomato soup"))
     orders.confirm_order(demo["user_id"], prepared["action_id"])
     fake_runner.finish(FakeJob(status="failed", result_text=""))
 
@@ -167,7 +236,8 @@ def test_confirm_order_records_failure(demo, fake_runner, fake_db):
 
 
 def test_confirm_order_cannot_be_reused(demo, fake_runner):
-    prepared = json.loads(orders.prepare_order(demo["user_id"], catalog_item_id="f2"))
+    _mark_open(demo["user_id"])
+    prepared = json.loads(orders.prepare_order(demo["user_id"], restaurant="Panera Bread", item="tomato soup"))
     orders.confirm_order(demo["user_id"], prepared["action_id"])
     fake_runner.finish(FakeJob(status="done"))
 
@@ -185,17 +255,32 @@ async def test_confirm_order_speaks_result_into_live_call(demo, fake_runner):
         def __init__(self):
             self.injected = []
 
+        def __init__(self):
+            self.injected = []
+            self.behaviors = []
+            self.order_updates_paused = False
+
         async def inject(self, text, behavior="interrupt"):
             self.injected.append(text)
+            self.behaviors.append(behavior)
 
     session = FakeSession()
     ACTIVE_SESSIONS[demo["user_id"]] = session
     try:
-        prepared = json.loads(orders.prepare_order(demo["user_id"], catalog_item_id="f2"))
+        _mark_open(demo["user_id"])
+        prepared = json.loads(orders.prepare_order(demo["user_id"], restaurant="Panera Bread", item="tomato soup"))
         orders.confirm_order(demo["user_id"], prepared["action_id"])
+        fake_runner.on_progress("I am looking through the DoorDash menu for soup.")
+        session.order_updates_paused = True
+        fake_runner.on_progress("The caller changed the subject, so this must not be spoken.")
+        session.order_updates_paused = False
+        await asyncio.sleep(0.05)
         fake_runner.finish(FakeJob(status="done"))
         await asyncio.sleep(0.05)  # let the loop process the scheduled inject()
-        assert session.injected and "placed" in session.injected[0].lower()
+        assert any("menu" in line.lower() for line in session.injected)
+        assert not any("changed the subject" in line.lower() for line in session.injected)
+        assert any("placed" in line.lower() for line in session.injected)
+        assert session.behaviors and set(session.behaviors) == {"queue"}
     finally:
         ACTIVE_SESSIONS.pop(demo["user_id"], None)
 

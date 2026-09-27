@@ -51,13 +51,18 @@ class BrowserJob:
     executed: list[dict] = field(default_factory=list)  # {"action", "role", "name", "ok"}
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     on_done: Callable[["BrowserJob"], None] | None = None
+    on_progress: Callable[[str], None] | None = None
+    lookup: bool = False
+    park: bool = False  # after a successful lookup, leave the browser on that page
+    stay: bool = False  # this job continues on a page a lookup already opened
+    page_name: str = ""
 
     @property
     def ok(self) -> bool:
         return self.status == "done"
 
 
-def _default_env_factory(site: str, goal: str, headless: bool) -> Any:
+def _default_env_factory(site: str, goal: str, headless: bool, lookup: bool = False) -> Any:
     from agisdk.REAL.browsergym.core.env import BrowserEnv
 
     from browser_agent.actions import ACTION_SET
@@ -65,7 +70,7 @@ def _default_env_factory(site: str, goal: str, headless: bool) -> Any:
 
     return BrowserEnv(
         FreeformCloneTask,
-        task_kwargs={"site": site, "goal": goal_with_hints(site, goal)},
+        task_kwargs={"site": site, "goal": goal_with_hints(site, goal, lookup=lookup)},
         headless=headless,
         viewport={"width": 1280, "height": 900},
         record_video_dir=settings.browser_video_dir or None,
@@ -73,11 +78,23 @@ def _default_env_factory(site: str, goal: str, headless: bool) -> Any:
     )
 
 
-def _default_agent_factory(goal: str, use_screenshot: bool, site: str = "dashdish") -> Any:
-    from browser_agent.agent import MuseSparkAgent
+def _default_agent_factory(goal: str, use_screenshot: bool, site: str = "dashdish", lookup: bool = False, stay: bool = False) -> Any:
+    from browser_agent.agent import LOOKUP_EXAMPLES, LOOKUP_SYSTEM, MuseSparkAgent
     from browser_agent.tasks import goal_with_hints
 
-    return MuseSparkAgent(goal_with_hints(site, goal), use_screenshot=use_screenshot)
+    hinted = goal_with_hints(site, goal, lookup=lookup, stay=stay)
+    if lookup:
+        return MuseSparkAgent(hinted, use_screenshot=use_screenshot, system_text=LOOKUP_SYSTEM, examples=LOOKUP_EXAMPLES)
+    return MuseSparkAgent(hinted, use_screenshot=use_screenshot)
+
+
+@dataclass
+class _ParkedPage:
+    user_id: str
+    site: str
+    env: Any
+    obs: dict
+    page_name: str
 
 
 class BrowserJobRunner:
@@ -91,6 +108,8 @@ class BrowserJobRunner:
         self._jobs: dict[str, BrowserJob] = {}
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._lock = threading.Lock()
+        self._parked: _ParkedPage | None = None
 
     # --- lifecycle -------------------------------------------------------
     def start(self) -> None:
@@ -113,8 +132,10 @@ class BrowserJobRunner:
 
     # --- API ---------------------------------------------------------------
     def submit(self, site: str, goal: str, user_id: str | None = None, on_done: Callable | None = None,
-               flow_key: str | None = None, replay: bool = True) -> BrowserJob:
-        job = BrowserJob(site=site, goal=goal, user_id=user_id, on_done=on_done, flow_key=flow_key, replay=replay)
+               flow_key: str | None = None, replay: bool = True, on_progress: Callable | None = None,
+               lookup: bool = False, park: bool = False, page_name: str = "") -> BrowserJob:
+        job = BrowserJob(site=site, goal=goal, user_id=user_id, on_done=on_done, flow_key=flow_key, replay=replay,
+                         on_progress=on_progress, lookup=lookup, park=park, page_name=page_name)
         self._jobs[job.id] = job
         self.start()
         self._queue.put(job)
@@ -123,11 +144,26 @@ class BrowserJobRunner:
     def get(self, job_id: str) -> BrowserJob | None:
         return self._jobs.get(job_id)
 
+    def has_parked(self, user_id: str) -> bool:
+        """True when a lookup left this caller's browser open on a restaurant page."""
+        with self._lock:
+            return self._parked is not None and self._parked.user_id == user_id
+
+    def cancel_for_user(self, user_id: str) -> None:
+        """Stop a queued or running job so it stops speaking into the call."""
+        with self._lock:
+            for job in self._jobs.values():
+                if job.user_id == user_id and job.status in ("queued", "running"):
+                    job.status = "cancelled"
+                    job.on_progress = None
+
     def run_now(self, site: str, goal: str, user_id: str | None = None, headless: bool | None = None,
                 use_screenshot: bool | None = None, max_steps: int | None = None,
-                flow_key: str | None = None, replay: bool = True) -> BrowserJob:
+                flow_key: str | None = None, replay: bool = True, lookup: bool = False,
+                park: bool = False, page_name: str = "") -> BrowserJob:
         """Run a job on the calling thread (CLI and tests)."""
-        job = BrowserJob(site=site, goal=goal, user_id=user_id, flow_key=flow_key, replay=replay)
+        job = BrowserJob(site=site, goal=goal, user_id=user_id, flow_key=flow_key, replay=replay,
+                         lookup=lookup, park=park, page_name=page_name)
         self._jobs[job.id] = job
         self._execute(job, headless=headless, use_screenshot=use_screenshot, max_steps=max_steps)
         return job
@@ -135,8 +171,29 @@ class BrowserJobRunner:
     # --- execution ---------------------------------------------------------
     def _make_agent(self, job: BrowserJob, use_screenshot: bool) -> Any:
         if self._agent_factory is _default_agent_factory:
-            return self._agent_factory(job.goal, use_screenshot, job.site)
+            return self._agent_factory(job.goal, use_screenshot, job.site, job.lookup, job.stay)
         return self._agent_factory(job.goal, use_screenshot)
+
+    def _claim_page(self, job: BrowserJob) -> tuple[_ParkedPage | None, _ParkedPage | None]:
+        """Return (page to continue, page to close) for this job. Worker thread only."""
+        with self._lock:
+            parked = self._parked
+            if parked is None:
+                return None, None
+            self._parked = None
+            if not job.lookup and parked.user_id == job.user_id and parked.site == job.site:
+                return parked, None
+            return None, parked
+
+    def _hold_page(self, job: BrowserJob, env: Any, obs: dict) -> None:
+        with self._lock:
+            previous = self._parked
+            self._parked = _ParkedPage(job.user_id or "", job.site, env, obs, job.page_name)
+        if previous is not None and previous.env is not env:
+            try:
+                previous.env.close()
+            except Exception:  # noqa: BLE001
+                log.exception("closing the previous page failed")
 
     def _do_step(self, env: Any, job: BrowserJob, action: str, obs_before: dict | None) -> tuple[dict, bool]:
         """Execute one action; returns (new obs, ok)."""
@@ -195,17 +252,53 @@ class BrowserJobRunner:
         max_steps = max_steps or settings.browser_max_steps
         deadline = time.monotonic() + settings.browser_timeout_s
 
-        job.status = "running"
+        with self._lock:
+            if job.status == "cancelled":
+                cancelled_early = True
+            else:
+                job.status = "running"
+                cancelled_early = False
         started = time.monotonic()
+        if cancelled_early:
+            log.info("job %s cancelled before it started", job.id)
+            if job.on_done:
+                try:
+                    job.on_done(job)
+                except Exception:  # noqa: BLE001
+                    log.exception("on_done failed for job %s", job.id)
+            return
         if job.user_id:
             activity.log_event(job.user_id, "browser_job_started", f"{job.site}: {job.goal[:120]}", {"job_id": job.id})
         log.info("job %s start site=%s headless=%s screenshot=%s flow=%s goal=%s", job.id, job.site, headless, use_screenshot, job.flow_key, job.goal)
 
         env = None
+        obs = None
         try:
-            env = self._env_factory(job.site, job.goal, headless)
+            parked, stale = self._claim_page(job)
+            if stale is not None:
+                try:
+                    stale.env.close()
+                except Exception:  # noqa: BLE001
+                    log.exception("closing the previous page failed")
+            if parked is not None:
+                env = parked.env
+                obs = parked.obs
+                job.stay = True
+                job.replay = False
+                name = parked.page_name or "the restaurant"
+                job.goal = (
+                    f"You are already on the {name} page. Stay on this page. "
+                    "Do not go back to the home page and do not search for the restaurant again. "
+                    f"Find the dish on this menu and place the delivery order. The request was: {job.goal}"
+                )
+                log.info("job %s resuming on the parked %s page", job.id, name)
+            else:
+                if self._env_factory is _default_env_factory:
+                    env = self._env_factory(job.site, job.goal, headless, job.lookup)
+                else:
+                    env = self._env_factory(job.site, job.goal, headless)
+                obs, _info = env.reset()
             agent = self._make_agent(job, use_screenshot)
-            obs, _info = env.reset()
 
             flow = self._flows.load(job.site, job.flow_key) if (job.flow_key and job.replay) else None
             if flow:
@@ -219,10 +312,19 @@ class BrowserJobRunner:
                     job.status, job.error = "failed", f"no result after {max_steps} steps"
                     break
                 plan = agent.next_plan(obs)
+                if job.status != "running":
+                    break
                 job.model_calls = agent.model_calls
                 log.info("job %s plan (%d): %s", job.id, len(plan), " | ".join(a[:60] for a in plan))
                 reason = first_sentence(agent.last_reply)
+                if job.on_progress and reason:
+                    try:
+                        job.on_progress(reason)
+                    except Exception:  # noqa: BLE001
+                        log.exception("on_progress failed for job %s", job.id)
                 for action in plan:
+                    if job.status != "running":
+                        break
                     term = terminal_message(action)
                     if term:
                         kind, text = term
@@ -242,7 +344,12 @@ class BrowserJobRunner:
             log.exception("job %s crashed", job.id)
             job.status, job.error = "failed", f"{type(e).__name__}: {str(e)[:200]}"
         finally:
-            if env is not None:
+            held = False
+            if env is not None and job.park and job.ok and job.user_id and isinstance(obs, dict):
+                self._hold_page(job, env, obs)
+                held = True
+                log.info("job %s leaving the browser on %s", job.id, job.page_name or job.final_url or "the open page")
+            if env is not None and not held:
                 try:
                     env.close()
                 except Exception:  # noqa: BLE001

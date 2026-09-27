@@ -67,5 +67,5 @@ def health() -> dict:
         "mcp_servers": {name: f"{mount_path(name)}/mcp" for name in SERVERS},
         "db": "supabase" if settings.supabase_url and not settings.gary_fake_db else "fake",
         "sms": bool(settings.twilio_account_sid),
-        "browser_agent": {"model": settings.muse_model, "headless": settings.browser_headless, "configured": bool(settings.meta_api_key)},
+        "browser_agent": {"model": settings.muse_model, "headless": settings.browser_headless, "configured": bool(settings.openrouter_api_key)},
     }

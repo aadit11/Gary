@@ -33,6 +33,7 @@ class Settings(BaseSettings):
 
     # Optional
     meta_api_key: str = ""
+    openrouter_api_key: str = ""
 
     # App
     public_base_url: str = ""
@@ -55,10 +56,11 @@ class Settings(BaseSettings):
     deepgram_voice: str = "flux-cole-en"          # Deepgram speak model (v2)
     port: int = 8000                              # local port; the MCP adapter connects over loopback
 
-    # Browser agent (Muse Spark on Meta Model API driving REAL clones)
+    # Browser agent (OpenRouter, Claude Haiku 4.5, driving REAL clones)
+    openrouter_api_base: str = "https://openrouter.ai/api/v1"
     meta_api_base: str = "https://api.meta.ai/v1"
-    muse_model: str = "muse-spark-1.3"
-    muse_reasoning_effort: str = "low"           # minimal | low | medium | high (Muse Spark is a reasoning model)
+    muse_model: str = "anthropic/claude-haiku-4.5"
+    muse_reasoning_effort: str = ""              # only sent for Muse Spark; Claude Haiku does not use it
     muse_max_tokens: int = 3000
     browser_headless: bool = True
     browser_max_steps: int = 25

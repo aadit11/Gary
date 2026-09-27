@@ -59,6 +59,36 @@ The order confirmation is showing, so the task is complete.
 send_msg_to_user("DONE: Ordered one Classic Cheeseburger from Souvla for delivery, total $21.77.")
 ```"""
 
+LOOKUP_SYSTEM = """# Instructions
+
+You are operating a web browser to look up one restaurant for an older adult on the phone. Review the goal, the current page, and your past actions, then produce the next actions. Your answer is executed by a program, so follow the format exactly.
+
+Rules:
+- Only report what is actually on the page. Never invent a restaurant or a status.
+- This is a lookup. Do not add items, open the cart, or place an order.
+- Search for the restaurant and open its page.
+- If the menu is available for delivery, the restaurant is open.
+- If the page says closed, unavailable, or not accepting orders, the restaurant is closed.
+- If no matching restaurant is listed, it is missing.
+- When you can tell, reply with exactly one of these and nothing else:
+  send_msg_to_user("DONE: OPEN. <restaurant> can take a delivery order.")
+  send_msg_to_user("DONE: CLOSED. <restaurant> is closed.")
+  send_msg_to_user("DONE: MISSING. <restaurant> is not on this site.")
+- Think briefly, then give the plan in a single ``` fenced code block, one action per line.
+"""
+
+LOOKUP_EXAMPLES = """Examples of answers:
+
+The restaurant page shows a menu I can order from, so it is open. I will stop without adding anything.
+```
+send_msg_to_user("DONE: OPEN. Souvla can take a delivery order.")
+```
+
+The page says the restaurant is closed.
+```
+send_msg_to_user("DONE: CLOSED. Souvla is closed.")
+```"""
+
 
 def element_info(obs: dict, bid: str) -> tuple[str, str]:
     """(role, name) for an element id from the accessibility tree, or ('', '')."""
@@ -172,9 +202,12 @@ def terminal_message(action: str) -> tuple[str, str] | None:
 
 
 class MuseSparkAgent:
-    def __init__(self, goal: str, use_screenshot: bool = True, complete: Callable[..., str] | None = None):
+    def __init__(self, goal: str, use_screenshot: bool = True, complete: Callable[..., str] | None = None,
+                 system_text: str | None = None, examples: str | None = None):
         self.goal = goal
         self.use_screenshot = use_screenshot
+        self.system_text = system_text or SYSTEM_TEXT
+        self.examples = examples or EXAMPLES
         if complete is None:
             from browser_agent import muse
 
@@ -210,7 +243,7 @@ class MuseSparkAgent:
             parts.append({"type": "image_url", "image_url": {"url": screenshot_data_url(obs["screenshot"]), "detail": "auto"}})
         parts.append({
             "type": "text",
-            "text": "# Action Space\n\n" + ACTION_SET.describe(with_long_description=False, with_examples=True) + "\n\n" + EXAMPLES,
+            "text": "# Action Space\n\n" + ACTION_SET.describe(with_long_description=False, with_examples=True) + "\n\n" + self.examples,
         })
         if self.action_history:
             parts.append({"type": "text", "text": "# History of past actions (oldest first)\n\n" + "\n".join(self.action_history[-20:])
@@ -221,7 +254,7 @@ class MuseSparkAgent:
             "type": "text",
             "text": "# Next actions\n\nThink step by step about where you are in the flow and what remains, then give the plan in one fenced code block, one action per line.",
         })
-        return [{"role": "system", "content": SYSTEM_TEXT}, {"role": "user", "content": parts}]
+        return [{"role": "system", "content": self.system_text}, {"role": "user", "content": parts}]
 
     def next_plan(self, obs: dict) -> list[str]:
         """One model call -> a list of actions (possibly ending with a terminal action)."""
