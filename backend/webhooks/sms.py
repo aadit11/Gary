@@ -12,6 +12,7 @@ import re
 from typing import Callable
 
 from fastapi import APIRouter, Form
+from pydantic import BaseModel
 from fastapi.responses import Response
 
 from core import activity, approvals, notify
@@ -73,6 +74,32 @@ def handle_reply(from_phone: str, body: str) -> str:
         activity.log_event(resolved.user_id, "approval_denied", f"Denied: {resolved.action}", {"approval_id": resolved.id})
         return "Understood, we won't go ahead with it."
     return "Please reply YES to allow it or NO to stop it."
+
+
+def resolve_by_id(approval_id: str, approved: bool) -> str:
+    """Same outcome as a YES/NO text, for the family dashboard's Approve/Deny buttons."""
+    if approved:
+        resolved = approvals.resolve(approval_id, approved=True, notify=False)
+        if resolved is None:
+            return "That request was already handled."
+        text = _execute(resolved)
+        approvals.notify_resolved(resolved)
+        return text
+    resolved = approvals.resolve(approval_id, approved=False)
+    if resolved is None:
+        return "That request was already handled."
+    activity.log_event(resolved.user_id, "approval_denied", f"Denied: {resolved.action}", {"approval_id": resolved.id})
+    return "Understood, we won't go ahead with it."
+
+
+class Decision(BaseModel):
+    approved: bool
+
+
+@router.post("/approvals/{approval_id}")
+async def decide(approval_id: str, decision: Decision) -> dict:
+    """Family dashboard: approve or deny a held request (runs the action and tells the caller)."""
+    return {"message": resolve_by_id(approval_id, decision.approved)}
 
 
 @router.post("/sms")

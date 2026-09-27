@@ -1,3 +1,4 @@
+import DecisionButtons from "@/components/DecisionButtons";
 import { careFirstName } from "@/lib/care";
 import { DEMO_USER_ID, fmtTime, supabase } from "@/lib/supabase";
 
@@ -43,7 +44,7 @@ export default async function Approvals() {
     <>
       <p className="eyebrow">Decisions</p>
       <h1>What is waiting on you</h1>
-      <p className="lede">Gary holds a payment or an unusual request until you decide. {person} is not asked for card numbers, and nothing here is paid from this page.</p>
+      <p className="lede">Gary holds a payment or an unusual request until you decide. Approve or deny here, or reply YES or NO by message; either way Gary tells {person} on the call.</p>
       {error && <div className="notice">{error.message}</div>}
       {!rows.length && !error && (
         <div className="empty">
@@ -66,6 +67,7 @@ export default async function Approvals() {
                 </div>
                 <p>{row.reason}</p>
                 <p className="when">{fmtTime(row.created_at)}</p>
+                <DecisionButtons id={row.id} />
               </article>
             ))}
           </div>
