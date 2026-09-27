@@ -10,6 +10,7 @@ import logging
 import re
 from datetime import datetime
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from config import settings
 from core import activity, db
@@ -99,27 +100,58 @@ def _match_payee(text: str, payees: list[str]) -> str | None:
     return best
 
 
-def _extract_appointment(subject: str, body: str) -> dict[str, Any]:
+def _zone_for(user_id: str) -> ZoneInfo:
+    try:
+        rows = db.get_client().table("users").select("*").eq("id", user_id).limit(1).execute().data
+        name = (rows[0].get("timezone") if rows else None) or "America/New_York"
+    except Exception:  # noqa: BLE001
+        name = "America/New_York"
+    return ZoneInfo(name)
+
+
+def _clock(token: str) -> tuple[int, int] | None:
+    match = re.match(r"(\d{1,2})(?::(\d{2}))?\s*(AM|PM)", token.strip(), re.I)
+    if not match:
+        return None
+    hour = int(match.group(1)) % 12
+    if match.group(3).upper() == "PM":
+        hour += 12
+    return hour, int(match.group(2) or 0)
+
+
+def _extract_appointment(subject: str, body: str, tz: ZoneInfo) -> dict[str, Any]:
+    """Fields check-ins reads: title and starts_at (ISO timestamp in the user's timezone)."""
     text = f"{subject}\n{body}"
-    title = subject.strip() or "Appointment"
-    # Prefer "Dr. Name" if present.
-    dr = re.search(r"\bDr\.?\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?", text)
-    if dr:
-        title = dr.group(0)
-    when = None
-    m = _MONTH_DAY_YEAR_RE.search(text)
-    if m:
-        when = m.group(1)
-    time_m = re.search(r"\bat\s+(\d{1,2}(?::\d{2})?\s*(?:AM|PM|am|pm))", text)
-    if when and time_m:
-        when = f"{when} at {time_m.group(1).upper().replace('  ', ' ')}"
+    title = (subject.strip() or "Appointment").splitlines()[0]
+    # Spaces only, so a name cannot run onto the next line.
+    doctor = re.search(r"\bDr\.?[ \t]+[A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+)?", text)
+    if doctor:
+        title = doctor.group(0)
+    date_token = None
+    found_date = _MONTH_DAY_YEAR_RE.search(text)
+    if found_date:
+        date_token = found_date.group(1)
+    time_token = None
+    found_time = re.search(r"\bat\s+(\d{1,2}(?::\d{2})?\s*(?:AM|PM))", text, re.I)
+    if found_time:
+        time_token = found_time.group(1)
+    spoken = date_token
+    if date_token and time_token:
+        spoken = f"{date_token} at {time_token.upper()}"
+    starts_at = None
+    iso_day = _parse_date_token(date_token) if date_token else None
+    clock = _clock(time_token) if time_token else None
+    if iso_day and clock:
+        starts_at = datetime.fromisoformat(iso_day).replace(hour=clock[0], minute=clock[1], tzinfo=tz).isoformat()
     loc = None
-    loc_m = re.search(r"(?:location|at)\s*:\s*(.+)", text, re.I)
-    if loc_m:
-        loc = loc_m.group(1).strip().split("\n")[0][:120]
+    found_loc = re.search(r"location\s*:\s*(.+)", text, re.I)
+    if found_loc:
+        loc = found_loc.group(1).strip().split("\n")[0][:120]
     out: dict[str, Any] = {"title": title}
-    if when:
-        out["when"] = when
+    if spoken:
+        out["when"] = spoken
+    if starts_at:
+        out["starts_at"] = starts_at
     if loc:
         out["location"] = loc
     return out
@@ -157,7 +189,7 @@ def classify(
         return "bill", {"payee": guessed, "amount": amount, "due_date": due}
 
     if _APPT_RE.search(text):
-        return "appointment", _extract_appointment(subject, body)
+        return "appointment", _extract_appointment(subject, body, _zone_for(user_id))
 
     return "other", {}
 

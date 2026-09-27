@@ -36,6 +36,26 @@ def test_classify_demo_templates(demo):
             assert extracted.get("scam_labels")
         if label == "appointment":
             assert extracted.get("title")
+            assert "\n" not in extracted["title"]
+            assert extracted.get("starts_at")
+            assert "T" in extracted["starts_at"]
+
+
+def test_ingested_doctor_visit_is_spoken(demo):
+    """Check-ins reads extracted.starts_at, so a Gmail appointment must show up on the call."""
+    import json
+
+    from mcp_servers.checkins import get_upcoming_appointments
+
+    item = next(i for i in DEMO_EMAILS if i["key"] == "doctor_appointment")
+    ingest_parsed(
+        demo["user_id"],
+        _parsed("gm-dr-1", item["subject"], item["body"], item["sender"]),
+        known_payees=[],
+    )
+    say = json.loads(get_upcoming_appointments(demo["user_id"]))["say"]
+    assert "Dr. Patel" in say
+    assert "Springfield" not in say.split("Dr. Patel")[0]
 
 
 def test_classify_scam_medicare(demo):
