@@ -23,3 +23,11 @@ def test_addresses_whatsapp(monkeypatch):
 def test_send_without_creds_is_noop(monkeypatch):
     monkeypatch.setattr(settings, "twilio_account_sid", "")
     assert notify.send_sms("4089814724", "hi") == ""
+
+
+def test_invalid_number_does_not_call_twilio(monkeypatch):
+    monkeypatch.setattr(settings, "twilio_account_sid", "ACxxx")
+    monkeypatch.setattr(settings, "twilio_auth_token", "tok")
+    monkeypatch.setattr(settings, "twilio_phone_number", "+14089814724")
+    monkeypatch.setattr(notify, "_twilio", lambda: (_ for _ in ()).throw(AssertionError("Twilio was called")))
+    assert notify.send_sms("+15005550001", "hi") == ""

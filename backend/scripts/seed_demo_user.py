@@ -13,7 +13,9 @@ so City Electric / Sunrise Pharmacy will not be doubled.
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -26,7 +28,7 @@ DEMO = {
         "address": "12 Oak Lane, Springfield",
         "timezone": "America/New_York",
     },
-    "family": {"name": "David", "phone": "+13154804465", "relationship": "son", "can_approve": True},
+    "family": {"name": "David", "phone": "+15005550001", "relationship": "son", "can_approve": True},
     "known_payees": [
         {"name": "City Electric", "kind": "biller"},
         {"name": "Sunrise Pharmacy", "kind": "biller"},
@@ -68,6 +70,21 @@ def main() -> None:
     if not client.table("favorites").select("*").eq("user_id", uid).execute().data:
         client.table("favorites").insert({**DEMO["favorite"], "user_id": uid}).execute()
         print("created favorite")
+    if not client.table("emails").select("*").eq("gmail_id", "demo-dr-visit").execute().data:
+        local = datetime.now(ZoneInfo("America/New_York")) + timedelta(days=1)
+        starts = local.replace(hour=14, minute=0, second=0, microsecond=0)
+        client.table("emails").insert(
+            {
+                "user_id": uid,
+                "gmail_id": "demo-dr-visit",
+                "sender": "clinic@example.com",
+                "subject": "Doctor visit",
+                "snippet": "Doctor visit tomorrow at 2 PM.",
+                "classification": "appointment",
+                "extracted": {"title": "doctor's visit", "starts_at": starts.isoformat()},
+            }
+        ).execute()
+        print("created appointment")
 
     print(f"\nDEMO_USER_ID={uid}")
 

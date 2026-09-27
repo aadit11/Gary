@@ -33,6 +33,14 @@ def _twilio():
     return Client(settings.twilio_account_sid, settings.twilio_auth_token)
 
 
+def _can_message(phone: str) -> bool:
+    """False for empty, non-US, or fictional numbers. Those must not create a Twilio message."""
+    digits = phone.lstrip("+")
+    if len(digits) != 11 or not digits.startswith("1"):
+        return False
+    return digits[1:4] not in {"500", "555"}
+
+
 def addresses(to: str) -> tuple[str, str]:
     """Return (to, from) Twilio addresses for the configured family channel."""
     to = normalize_phone(to)
@@ -44,8 +52,12 @@ def addresses(to: str) -> tuple[str, str]:
 def send_sms(to: str, body: str) -> str:
     """Send one message on the family channel (SMS or WhatsApp).
 
-    Returns the Twilio message SID, or "" when not configured or on failure.
+    Returns the Twilio message SID, or "" when not configured, the number is invalid, or on failure.
     """
+    plain = normalize_phone(to)
+    if not _can_message(plain):
+        log.info("Message not sent (invalid number %s): %s", plain, body)
+        return ""
     to_addr, from_addr = addresses(to)
     client = _twilio()
     if client is None:

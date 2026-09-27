@@ -21,28 +21,42 @@ AUDIO = {
     "output": {"encoding": "mulaw", "sample_rate": 8000, "container": "none"},
 }
 
-# Flux end-of-turn settings. Higher threshold and a long timeout = wait through pauses.
+# English now. A later language is another entry here, not a change to the bridge.
+CALL_LANGUAGE = "en"
+VOICES: dict[str, dict[str, str]] = {
+    "en": {
+        "language": "en",
+        "listen_model": "flux-general-en",
+        "speak_model": "flux-alexis-en",
+    }
+}
+
+# Flux end-of-turn. High threshold and a long timeout wait through slow speech and thinking.
+# Do not set eager_eot_threshold; that starts a reply before the person has finished.
+_voice = VOICES[CALL_LANGUAGE]
 LISTEN = {
     "provider": {
         "type": "deepgram",
         "version": "v2",
-        "model": "flux-general-en",
-        "eot_threshold": 0.8,
-        "eot_timeout_ms": 8000,
+        "model": _voice["listen_model"],
+        "eot_threshold": 0.85,
+        "eot_timeout_ms": 15000,
     }
 }
 
 # Which MCP servers each call type can use. Fewer tools = better tool selection.
 SERVERS_BY_REASON: dict[str, list[str]] = {
-    "inbound": ["checkins", "money", "orders", "mobility"],
+    "inbound": ["checkins"],
     "morning_briefing": ["checkins", "money", "mobility"],
     "reminder": ["checkins"],
+    "appointment": ["checkins"],
 }
 
 GREETINGS = {
     "inbound": "Hello {user_name}, this is Gary. How can I help you today?",
     "morning_briefing": "Good morning {user_name}, it's Gary calling with your morning check-in. How did you sleep?",
     "reminder": "Hello {user_name}, it's Gary calling with a quick reminder.",
+    "appointment": "Hello {user_name}, it's Gary calling about an appointment.",
 }
 
 
@@ -61,7 +75,12 @@ def load_prompt(reason: str, **vars: Any) -> str:
     vars.setdefault("today", today_str())
     vars.setdefault("reminder_text", "")
     text = (PROMPTS_DIR / "base.md").read_text()
-    extra = {"morning_briefing": "morning_checkin.md", "reminder": "reminder.md"}.get(reason)
+    extra = {
+        "inbound": "inbound.md",
+        "morning_briefing": "morning_checkin.md",
+        "reminder": "reminder.md",
+        "appointment": "appointment.md",
+    }.get(reason)
     if extra:
         text += "\n\n" + (PROMPTS_DIR / extra).read_text()
     return text.format(**vars)
@@ -77,14 +96,14 @@ def build_settings(functions: list[dict], prompt: str, greeting: str) -> dict:
         "type": "Settings",
         "audio": AUDIO,
         "agent": {
-            "language": "en",
+            "language": _voice["language"],
             "listen": LISTEN,
             "think": {
                 "provider": {"type": "open_ai", "model": settings.deepgram_think_model, "temperature": 0.3},
                 "prompt": prompt,
                 "functions": functions,
             },
-            "speak": {"provider": {"type": "deepgram", "version": "v2", "model": settings.deepgram_voice}},
+            "speak": {"provider": {"type": "deepgram", "version": "v2", "model": _voice["speak_model"]}},
             "greeting": greeting,
         },
     }

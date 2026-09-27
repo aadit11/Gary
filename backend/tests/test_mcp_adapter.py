@@ -24,12 +24,20 @@ async def test_user_id_hidden_from_llm(adapter):
         assert "user_id" not in fn["parameters"]["properties"]
         assert "user_id" not in fn["parameters"]["required"]
         assert fn["description"] and "\n" not in fn["description"]
-        assert set(fn) == {"name", "description", "parameters"}
+        assert set(fn) == {"name", "description", "parameters", "defer_until_eot"}
+        assert fn["defer_until_eot"] is True
 
 
 async def test_server_filter(adapter):
     names = [f["name"] for f in adapter.deepgram_functions(["checkins"])]
-    assert names == ["get_upcoming_appointments"]
+    assert set(names) == {
+        "get_daily_briefing",
+        "get_upcoming_appointments",
+        "confirm_reminder",
+        "summarize_for_family",
+        "prepare_caregiver_transfer",
+        "confirm_caregiver_transfer",
+    }
 
 
 async def test_call_injects_user_id_and_returns_speak_json(adapter, demo):
@@ -48,4 +56,9 @@ def test_schema_conversion_strips_titles():
         description = "Do x.\nMore detail."
         inputSchema = {"type": "object", "title": "xArguments", "properties": {"user_id": {"title": "U", "type": "string"}, "q": {"title": "Q", "type": "string"}}, "required": ["user_id", "q"]}
     fn = to_deepgram_function(T())
-    assert fn == {"name": "x", "description": "Do x.", "parameters": {"type": "object", "properties": {"q": {"type": "string"}}, "required": ["q"]}}
+    assert fn == {
+        "name": "x",
+        "description": "Do x.",
+        "parameters": {"type": "object", "properties": {"q": {"type": "string"}}, "required": ["q"]},
+        "defer_until_eot": True,
+    }

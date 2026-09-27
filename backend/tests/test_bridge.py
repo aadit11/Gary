@@ -28,10 +28,11 @@ class FakeDG:
 class FakeAdapter:
     def __init__(self):
         self.calls = []
+        self.result = None
 
     async def call(self, name, args, user_id):
         self.calls.append((name, args, user_id))
-        return speak(f"ran {name}")
+        return self.result or speak(f"ran {name}")
 
 
 @pytest.fixture
@@ -69,6 +70,35 @@ async def test_function_call_roundtrip(session, demo):
     reply = json.loads(session.dg.sent[-1])
     assert reply["type"] == "FunctionCallResponse" and reply["id"] == "fc_1" and reply["name"] == "list_bills_due"
     assert isinstance(reply["content"], str) and json.loads(reply["content"])["say"] == "ran list_bills_due"
+
+
+async def test_tool_log_stores_category_and_redacts_digits(session, demo):
+    from core import db
+    from core.speech import speak
+
+    session.adapter.result = speak("Noted.", data={"category": "money_screened", "outcome": "summarized_to_family"})
+    await session.handle_deepgram_message({
+        "type": "FunctionCallRequest",
+        "functions": [{"id": "fc_9", "name": "summarize_for_family", "arguments": '{"summary": "card 4111111111111111"}', "client_side": True}],
+    })
+    rows = db.get_client().table("activity_log").select("*").eq("kind", "tool_called").execute().data
+    blob = json.dumps(rows)
+    assert "4111111111111111" not in blob
+    assert "[redacted]" in blob
+    assert rows[-1]["data"]["category"] == "money_screened"
+    assert rows[-1]["data"]["outcome"] == "summarized_to_family"
+    assert session.last_category == "money_screened"
+    assert session.last_outcome == "summarized_to_family"
+
+
+async def test_owned_tool_runs_even_if_marked_server_side(session):
+    session.adapter.tool_names = lambda: ["get_upcoming_appointments"]
+    await session.handle_deepgram_message({
+        "type": "FunctionCallRequest",
+        "functions": [{"id": "fc_2", "name": "get_upcoming_appointments", "arguments": "{}", "client_side": False}],
+    })
+    assert session.adapter.calls[0][0] == "get_upcoming_appointments"
+    assert json.loads(session.dg.sent[-1])["type"] == "FunctionCallResponse"
 
 
 async def test_server_side_functions_are_skipped(session):
