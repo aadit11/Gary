@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PROVIDERS } from "@/lib/providers";
 import Link from "next/link";
 import {
   DIET_OPTIONS,
@@ -108,12 +109,12 @@ export default function ProfileEditor({ initial, person, startTab = "settings" }
       {tab === "connections" && (
         <section className="panel">
           <h2>Connections</h2>
-          <p className="lede">Save the places Gary may use. This does not sign in to a bank, DoorDash, or Uber, and it never asks for a password or card.</p>
+          <p className="lede">Save the places Gary may use. This does not sign in to a bank, DoorDash, Uber, or Instacart, and it never asks for a password or card.</p>
           <div className="stack">
             <article className="decision">
               <label className="choice">
                 <input type="checkbox" checked={profile.connectors.doordash.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, doordash: { ...profile.connectors.doordash, connected: e.target.checked } } })} />
-                <strong>DoorDash</strong>
+                <span className="conn-row"><img src={PROVIDERS.find((p) => p.key === "doordash")!.logo} alt="" /><strong>{PROVIDERS.find((p) => p.key === "doordash")!.name}</strong></span>
               </label>
               {profile.connectors.doordash.connected && (
                 <label>
@@ -125,7 +126,7 @@ export default function ProfileEditor({ initial, person, startTab = "settings" }
             <article className="decision">
               <label className="choice">
                 <input type="checkbox" checked={profile.connectors.uber.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, uber: { ...profile.connectors.uber, connected: e.target.checked } } })} />
-                <strong>Uber</strong>
+                <span className="conn-row"><img src={PROVIDERS.find((p) => p.key === "uber")!.logo} alt="" /><strong>{PROVIDERS.find((p) => p.key === "uber")!.name}</strong></span>
               </label>
               {profile.connectors.uber.connected && (
                 <>
@@ -137,7 +138,7 @@ export default function ProfileEditor({ initial, person, startTab = "settings" }
             <article className="decision">
               <label className="choice">
                 <input type="checkbox" checked={profile.connectors.groceries.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, groceries: { ...profile.connectors.groceries, connected: e.target.checked } } })} />
-                <strong>Groceries</strong>
+                <span className="conn-row"><img src={PROVIDERS.find((p) => p.key === "groceries")!.logo} alt="" /><strong>{PROVIDERS.find((p) => p.key === "groceries")!.name}</strong></span>
               </label>
               {profile.connectors.groceries.connected && (
                 <label>Store<input value={profile.connectors.groceries.store} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, groceries: { ...profile.connectors.groceries, store: e.target.value } } })} placeholder="Sunrise Market" /></label>
