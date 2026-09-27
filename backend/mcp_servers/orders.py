@@ -409,12 +409,12 @@ def confirm_order(user_id: str, action_id: str) -> str:
             f"You are already on the {vendor} menu. Stay on this page. "
             f"Find {item_name} and place the delivery order. "
             "Do not go back to the home page and do not search for the restaurant again. "
-            "Do not invent a dish that is not shown."
+            "If the exact dish is not listed, choose the closest item on the menu and say which one you chose."
         )
     else:
         goal = (
             f"On DoorDash, open {vendor} and order {item_name}. "
-            "Choose a real item that is on the page, then place the delivery order. Do not invent a dish that is not shown."
+            "Choose a real item that is on the page, then place the delivery order. If the exact dish is not listed, choose the closest item on the menu and say which one you chose."
         )
     flow_key = payload.get("favorite_id")
 

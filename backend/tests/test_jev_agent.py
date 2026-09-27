@@ -68,3 +68,17 @@ def test_request_failure_is_graceful():
     assert a.next_plan(_obs()) == ["noop(800)"]
     a.next_plan(_obs())
     assert a.next_plan(_obs())[0].startswith("report_infeasible")
+
+
+def test_infeasible_not_offered_before_trying():
+    seen = []
+    def post(url, key, body):
+        seen.append(list(body["questions"]["operation"]["criteria"]))
+        return {"answers": {"operation": {"choice": "WAIT", "probabilities": {}}}}
+    a = JevAgent("x", post=post, text_fn=lambda *_: "", done_fn=lambda *_: "")
+    a.next_plan(_obs())
+    assert "INFEASIBLE" not in seen[0]
+    for _ in range(3):
+        a.record("noop(800)", _obs())
+    a.next_plan(_obs())
+    assert "INFEASIBLE" in seen[1]

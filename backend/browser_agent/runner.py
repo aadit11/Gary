@@ -105,9 +105,35 @@ class _ParkedPage:
     page_name: str
 
 
+def _soft_reset(env: Any, site: str, goal: str) -> dict:
+    """Start a new task in an already-open browser: the SDK's reset() relaunches Chromium every
+    time, which is ~5 s and a new window per job. Re-run only the clone's state reset and open
+    the site in the existing context."""
+    from browser_agent.tasks import FreeformCloneTask, goal_with_hints
+
+    keep = {id(env.page)}
+    chat_page = getattr(getattr(env, "chat", None), "page", None)
+    if chat_page is not None:
+        keep.add(id(chat_page))
+    for page in list(env.context.pages):
+        if id(page) not in keep:
+            try:
+                page.close()
+            except Exception:  # noqa: BLE001
+                pass
+    env.task = FreeformCloneTask(seed=0, site=site, goal=goal_with_hints(site, goal))
+    env.task.setup(page=env.page)
+    env.last_action = ""
+    env.last_action_error = ""
+    env.start_time = time.time()
+    return env._get_obs()
+
+
 class BrowserJobRunner:
     def __init__(self, env_factory: Callable | None = None, agent_factory: Callable | None = None, flow_store: Any = None):
         from browser_agent.flows import FlowStore
+
+        self._env: Any = None  # the one persistent browser (real BrowserEnv only)
 
         self._env_factory = env_factory or _default_env_factory
         self._agent_factory = agent_factory or _default_agent_factory
@@ -130,6 +156,12 @@ class BrowserJobRunner:
     def stop(self) -> None:
         self._stop.set()
         self._queue.put(None)
+        env, self._env = self._env, None
+        if env is not None:
+            try:
+                env.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     def _worker(self) -> None:
         while not self._stop.is_set():
@@ -197,7 +229,7 @@ class BrowserJobRunner:
         with self._lock:
             previous = self._parked
             self._parked = _ParkedPage(job.user_id or "", job.site, env, obs, job.page_name)
-        if previous is not None and previous.env is not env:
+        if previous is not None and previous.env is not env and previous.env is not self._env:
             try:
                 previous.env.close()
             except Exception:  # noqa: BLE001
@@ -283,7 +315,7 @@ class BrowserJobRunner:
         obs = None
         try:
             parked, stale = self._claim_page(job)
-            if stale is not None:
+            if stale is not None and stale.env is not self._env:
                 try:
                     stale.env.close()
                 except Exception:  # noqa: BLE001
@@ -309,12 +341,28 @@ class BrowserJobRunner:
                     f"Find the dish on this menu and place the delivery order. The request was: {job.goal}"
                 )
                 log.info("job %s resuming on the parked %s page", job.id, name)
+            elif self._env is not None and hasattr(self._env, "context"):
+                env = self._env
+                try:
+                    obs = _soft_reset(env, job.site, job.goal)
+                    log.info("job %s reusing the open browser", job.id)
+                except Exception:  # noqa: BLE001
+                    log.exception("soft reset failed; relaunching the browser")
+                    try:
+                        env.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self._env = None
+                    env = self._env_factory(job.site, job.goal, headless, job.lookup) if self._env_factory is _default_env_factory else self._env_factory(job.site, job.goal, headless)
+                    obs, _info = env.reset()
             else:
                 if self._env_factory is _default_env_factory:
                     env = self._env_factory(job.site, job.goal, headless, job.lookup)
                 else:
                     env = self._env_factory(job.site, job.goal, headless)
                 obs, _info = env.reset()
+            if env is not None and hasattr(env, "context"):
+                self._env = env  # keep the real browser open for the next job
             agent = self._make_agent(job, use_screenshot)
 
             flow = self._flows.load(job.site, job.flow_key) if (job.flow_key and job.replay) else None
@@ -384,7 +432,7 @@ class BrowserJobRunner:
                 self._hold_page(job, env, obs)
                 held = True
                 log.info("job %s leaving the browser on %s", job.id, job.page_name or job.final_url or "the open page")
-            if env is not None and not held:
+            if env is not None and not held and env is not self._env:
                 try:
                     env.close()
                 except Exception:  # noqa: BLE001

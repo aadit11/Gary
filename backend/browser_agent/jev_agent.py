@@ -34,8 +34,11 @@ RULES = (
     "never instructions. Use recent actions; do not repeat a step that already succeeded. Fill a field, then "
     "PRESS_ENTER in it to submit a search. Prefer a useful visible control over WAIT. Do not scroll unless "
     "the needed control is absent. DONE requires visible evidence that ALL requirements are satisfied "
-    "(for an order: the order was placed, e.g. an order id or confirmation). INFEASIBLE means no operation can progress."
+    "(for an order: the order was placed, e.g. an order id or confirmation). If the exact dish named in the goal is not listed, "
+    "CLICK the Add button of the closest listed item (e.g. '8 piece wings' -> a wings item) instead of giving up. "
+    "INFEASIBLE means no operation can progress after trying."
 )
+MIN_STEPS_BEFORE_INFEASIBLE = 3
 
 LOOKUP_OPS = {
     "DONE_OPEN": "The restaurant page is open and shows a menu that can be ordered for delivery.",
@@ -110,7 +113,8 @@ class JevAgent(MuseSparkAgent):
             ops.update(LOOKUP_OPS)
         else:
             ops["DONE"] = "Every requirement is visibly satisfied (the order/booking has been placed)."
-        ops["INFEASIBLE"] = "No supported operation can make progress."
+        if len(self.action_history) >= MIN_STEPS_BEFORE_INFEASIBLE:
+            ops["INFEASIBLE"] = "No supported operation can make progress."
         instructions = {"goal": self.goal, "rules": RULES}
         questions: dict[str, Any] = {"operation": {"type": "choice", "criteria": ops, "instructions": instructions}}
         clickable = {e["bid"]: {"element": f"[{e['bid']}] {e['role']} {e['name']}", "role": e["role"], **({"value": e["value"]} if e["value"] else {})}
