@@ -13,6 +13,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 from typing import Any
 
 from config import settings
@@ -23,6 +24,7 @@ from voice.mcp_adapter import MCPAdapter
 log = logging.getLogger(__name__)
 
 KEEPALIVE_S = 8
+_LONG_DIGITS = re.compile(r"\d{5,}")
 
 # user_id -> live session, so approvals can be spoken into the call (voice/injection.py).
 ACTIVE_SESSIONS: dict[str, "VoiceAgentSession"] = {}
@@ -40,7 +42,10 @@ class VoiceAgentSession:
         self.user_name: str = "there"
         self.reason: str = "inbound"
         self.reminder_text: str = ""
+        self.reminder_id: str = ""
         self.settings_sent = False
+        self.last_category: str = "unknown"
+        self.last_outcome: str = "unknown"
 
     # --- entry point -----------------------------------------------------
     async def run(self) -> None:
@@ -48,6 +53,7 @@ class VoiceAgentSession:
         if not await self._wait_for_start():
             return
         self._load_user()
+        self._mark_reminder_answered()
         prompt = agent_settings.load_prompt(
             self.reason, user_name=self.user_name, reminder_text=self.reminder_text, today=agent_settings.today_str(self.user_tz)
         )
@@ -78,7 +84,7 @@ class VoiceAgentSession:
         finally:
             ACTIVE_SESSIONS.pop(self.user_id, None)
             self._mark_call_ended()
-            activity.log_event(self.user_id, "call_ended", f"{self.reason} call ended", {"call_sid": self.call_sid})
+            activity.log_event(self.user_id, "call_ended", f"{self.reason} call ended", self._call_record())
             try:
                 await self.twilio_ws.close()
             except Exception:  # noqa: BLE001
@@ -102,6 +108,7 @@ class VoiceAgentSession:
         self.user_id = params.get("user_id") or settings.demo_user_id
         self.reason = params.get("reason") or "inbound"
         self.reminder_text = params.get("reminder_text") or ""
+        self.reminder_id = params.get("reminder_id") or ""
 
     def _load_user(self) -> None:
         self.user_tz = "America/New_York"
@@ -112,6 +119,22 @@ class VoiceAgentSession:
                 self.user_tz = rows[0].get("timezone") or self.user_tz
         except Exception:  # noqa: BLE001
             log.exception("user lookup failed")
+
+    def _mark_reminder_answered(self) -> None:
+        if not self.reminder_id:
+            return
+        try:
+            logs = db.get_client().table("reminder_logs").select("*").eq("reminder_id", self.reminder_id).execute().data
+            open_logs = [row for row in logs if not row.get("confirmed")]
+            if not open_logs:
+                return
+            latest = sorted(open_logs, key=lambda row: str(row.get("scheduled_for") or ""))[-1]
+            db.get_client().table("reminder_logs").update({"answered": True}).eq("id", latest["id"]).execute()
+        except Exception:  # noqa: BLE001
+            log.exception("reminder answered update failed")
+
+    def _call_record(self) -> dict:
+        return {"call_sid": self.call_sid, "category": self.last_category, "outcome": self.last_outcome}
 
     def _mark_call_ended(self) -> None:
         if not self.call_sid:
@@ -167,16 +190,28 @@ class VoiceAgentSession:
         if t == "UserStartedSpeaking":
             await self.clear_twilio_audio()
         elif t == "FunctionCallRequest":
-            for fn in msg.get("functions", []):
-                if fn.get("client_side") is False:
+            functions = msg.get("functions") or []
+            if not functions:
+                log.warning("call %s: function request had no functions", self.call_sid)
+            for fn in functions:
+                name = fn.get("name", "")
+                client_side = fn.get("client_side")
+                log.info("call %s: function request %s client_side=%s", self.call_sid, name, client_side)
+                # Our tools have no Deepgram endpoint. Skipping them leaves the caller in silence.
+                if client_side is False and not self._owns_tool(name):
                     continue
                 await self._handle_function_call(fn)
+        elif t == "FunctionCallCancelled":
+            log.info("call %s: function cancelled %s", self.call_sid, msg.get("id") or msg.get("function_id"))
         elif t == "ConversationText":
             log.info("call %s [%s] %s", self.call_sid, msg.get("role"), msg.get("content"))
         elif t == "InjectionRefused":
             log.warning("call %s: injection refused", self.call_sid)
+            activity.log_event(self.user_id, "call_error", "injection refused", {"call_sid": self.call_sid, "category": self.last_category})
         elif t == "Error":
             log.error("call %s: deepgram error %s", self.call_sid, msg)
+            self.last_outcome = "error"
+            activity.log_event(self.user_id, "call_error", "deepgram error", {"call_sid": self.call_sid, "category": self.last_category})
             return False
         elif t == "Warning":
             log.warning("call %s: deepgram warning %s", self.call_sid, msg)
@@ -193,16 +228,92 @@ class VoiceAgentSession:
             args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
         except json.JSONDecodeError:
             args = {}
-        log.info("call %s: tool %s %s", self.call_sid, name, args)
+        safe_args = _redact(args)
+        log.info("call %s: tool %s %s", self.call_sid, name, safe_args)
         content = await self.adapter.call(name, args, self.user_id)
-        activity.log_event(self.user_id, "tool_called", f"{name}", {"call_sid": self.call_sid, "args": args})
-        await self.dg.send(json.dumps({"type": "FunctionCallResponse", "id": fn.get("id"), "name": name, "content": content}))
+        category, outcome, say, ok = _tool_result(content)
+        if category:
+            self.last_category = category
+        if outcome:
+            self.last_outcome = outcome
+        if _wants_transfer(content):
+            from voice.twilio_routes import dial_number
+
+            phone = _transfer_phone(content)
+            if dial_number(self.call_sid or "", phone):
+                self.last_outcome = "transferred"
+            else:
+                self.last_outcome = "transfer_skipped"
+            outcome = self.last_outcome
+        activity.log_event(
+            self.user_id,
+            "tool_called",
+            name,
+            {
+                "call_sid": self.call_sid,
+                "tool": name,
+                "args": safe_args,
+                "ok": ok,
+                "say": _redact(say)[:180],
+                "category": self.last_category,
+                "outcome": outcome or self.last_outcome,
+            },
+        )
+        response = {"type": "FunctionCallResponse", "id": fn.get("id"), "name": name, "content": content}
+        if fn.get("thought_signature"):
+            response["thought_signature"] = fn["thought_signature"]
+        await self.dg.send(json.dumps(response))
+
+    def _owns_tool(self, name: str) -> bool:
+        names = getattr(self.adapter, "tool_names", None)
+        if not callable(names):
+            return False
+        try:
+            return name in names()
+        except Exception:  # noqa: BLE001
+            return False
 
     async def inject(self, text: str, behavior: str = "interrupt") -> None:
         """Make the agent say `text` now (approval results)."""
         if self.dg is None or not self.settings_sent:
             return
         await self.dg.send(json.dumps({"type": "InjectAgentMessage", "message": text, "behavior": behavior}))
+
+
+def _redact(value: Any) -> Any:
+    """Replace digit runs longer than four so secrets never land in the log."""
+    if isinstance(value, str):
+        return _LONG_DIGITS.sub("[redacted]", value)
+    if isinstance(value, dict):
+        return {key: _redact(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact(item) for item in value]
+    return value
+
+
+def _tool_result(content: str) -> tuple[str, str, str, bool]:
+    try:
+        body = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return "", "", "", False
+    data = body.get("data") or {}
+    outcome = str(data.get("outcome") or "")
+    return str(data.get("category") or ""), outcome, str(body.get("say") or ""), outcome != "error"
+
+
+def _wants_transfer(content: str) -> bool:
+    try:
+        data = (json.loads(content).get("data") or {})
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return bool(data.get("transfer"))
+
+
+def _transfer_phone(content: str) -> str:
+    try:
+        return str((json.loads(content).get("data") or {}).get("phone") or "")
+    except (json.JSONDecodeError, TypeError):
+        return ""
 
 
 def _default_connect():

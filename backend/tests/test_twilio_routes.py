@@ -22,7 +22,12 @@ def test_agent_settings_shape():
     assert s["type"] == "Settings"
     assert s["audio"]["input"] == {"encoding": "mulaw", "sample_rate": 8000}
     assert s["audio"]["output"]["container"] == "none"
-    assert s["agent"]["listen"]["provider"]["model"].startswith("flux")
+    listen = s["agent"]["listen"]["provider"]
+    assert listen["model"].startswith("flux")
+    assert listen["eot_threshold"] == 0.85
+    assert listen["eot_timeout_ms"] == 15000
+    assert "eager_eot_threshold" not in listen
+    assert s["agent"]["language"] == "en"
     assert s["agent"]["think"]["functions"][0]["name"] == "f"
     assert s["agent"]["greeting"] == "hi"
 
@@ -32,5 +37,10 @@ def test_prompts_render():
 
     p = agent_settings.load_prompt("reminder", user_name="Margaret", reminder_text="take your pills")
     assert "Margaret" in p and "take your pills" in p and "{" not in p
-    assert "{" not in agent_settings.load_prompt("inbound", user_name="Margaret")
+    inbound = agent_settings.load_prompt("inbound", user_name="Margaret")
+    assert "{" not in inbound
+    assert "card number" in inbound and "Social Security" in inbound and "password" in inbound
+    assert "Never invent" in inbound
     assert agent_settings.servers_for("reminder") == ["checkins"]
+    assert agent_settings.servers_for("inbound") == ["checkins"]
+    assert agent_settings.servers_for("appointment") == ["checkins"]
