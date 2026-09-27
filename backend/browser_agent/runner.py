@@ -282,12 +282,16 @@ class BrowserJobRunner:
                     log.exception("closing the previous page failed")
             if parked is not None:
                 env = parked.env
-                try:
-                    # Re-observe: the parked obs was taken right after the lookup's last click and
-                    # may predate the page finishing loading. Not counted as a step.
-                    obs, _r, _t, _tr, _i = env.step("noop(400)")
-                except Exception:  # noqa: BLE001
-                    obs = parked.obs
+                # Re-observe: the parked obs was taken right after the lookup's last click and may
+                # predate the page finishing loading. Uses the env's observer, not an action.
+                obs = parked.obs
+                if hasattr(env, "_get_obs"):
+                    try:
+                        time.sleep(0.4)
+                        obs = env._get_obs()
+                    except Exception:  # noqa: BLE001
+                        log.exception("re-observe on resume failed; using the parked observation")
+                        obs = parked.obs
                 job.stay = True
                 job.replay = False
                 name = parked.page_name or "the restaurant"
