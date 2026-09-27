@@ -73,6 +73,8 @@ class Approval(BaseModel):
     reason: str = ""
     status: Literal["pending", "approved", "denied", "expired"] = "pending"
     resolved_at: datetime | None = None
+    # Not a column: set by webhooks/sms.py after running an approved action ("executed" | "failed").
+    outcome: str | None = None
 
 
 class ActivityEvent(BaseModel):

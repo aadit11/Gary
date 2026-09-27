@@ -42,5 +42,6 @@ def test_prompts_render():
     assert "card number" in inbound and "Social Security" in inbound and "password" in inbound
     assert "Never invent" in inbound
     assert agent_settings.servers_for("reminder") == ["checkins"]
-    assert agent_settings.servers_for("inbound") == ["checkins"]
+    assert agent_settings.servers_for("inbound") == ["checkins", "money"]
+    assert "money" in agent_settings.servers_for("morning_briefing")
     assert agent_settings.servers_for("appointment") == ["checkins"]

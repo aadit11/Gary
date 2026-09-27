@@ -78,8 +78,41 @@ def latest_pending_for_phone(phone: str) -> Approval | None:
     return _to_model(res.data[0]) if res.data else None
 
 
-def resolve(approval_id: str, approved: bool) -> Approval | None:
-    """Mark an approval approved/denied and notify subscribers. Returns the updated Approval."""
+def find_pending(user_id: str, action: str, **match: Any) -> Approval | None:
+    """Newest pending approval for this user and action whose payload contains `match`."""
+    rows = (
+        db.get_client()
+        .table("approvals")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("action", action)
+        .eq("status", "pending")
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    )
+    for row in rows:
+        payload = row.get("payload") or {}
+        if all(str(payload.get(k)) == str(v) for k, v in match.items()):
+            return _to_model(row)
+    return None
+
+
+def notify_resolved(approval: Approval) -> None:
+    """Tell subscribers (the live call) that an approval resolved."""
+    for cb in list(_callbacks):
+        try:
+            cb(approval)
+        except Exception:  # noqa: BLE001
+            log.exception("approval callback failed")
+
+
+def resolve(approval_id: str, approved: bool, notify: bool = True) -> Approval | None:
+    """Mark an approval approved/denied and, unless notify=False, tell subscribers.
+
+    Pass notify=False when the approved action still has to run, then call notify_resolved()
+    afterwards so the live call never hears about an action before it happened.
+    """
     status = "approved" if approved else "denied"
     res = (
         db.get_client()
@@ -92,9 +125,6 @@ def resolve(approval_id: str, approved: bool) -> Approval | None:
     if not res.data:
         return None
     approval = _to_model(res.data[0])
-    for cb in list(_callbacks):
-        try:
-            cb(approval)
-        except Exception:  # noqa: BLE001
-            log.exception("approval callback failed")
+    if notify:
+        notify_resolved(approval)
     return approval
