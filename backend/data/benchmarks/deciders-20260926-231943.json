@@ -1,0 +1,74 @@
+[
+  {
+    "flow": "A first-time order",
+    "status": "done",
+    "seconds": 36.6,
+    "steps": 8,
+    "calls": 5,
+    "confirmed": true,
+    "claim": "DONE: Ordered one Classic Cheeseburger from Souvla for delivery, total $20.70 before taxes.",
+    "decider": "llm",
+    "trial": 1
+  },
+  {
+    "flow": "A first-time order",
+    "status": "done",
+    "seconds": 32.9,
+    "steps": 8,
+    "calls": 5,
+    "confirmed": true,
+    "claim": "DONE: Ordered one Classic Cheeseburger from Souvla for delivery, total $20.70 before taxes.",
+    "decider": "llm",
+    "trial": 2
+  },
+  {
+    "flow": "A first-time order",
+    "status": "done",
+    "seconds": 34.5,
+    "steps": 8,
+    "calls": 5,
+    "confirmed": true,
+    "claim": "DONE: Ordered one Classic Cheeseburger from Souvla for delivery, total $20.70 before taxes.",
+    "decider": "llm",
+    "trial": 3
+  },
+  {
+    "flow": "B lookup+parked order",
+    "status": "done/done",
+    "seconds": 53.0,
+    "lookup_s": 17.1,
+    "order_s": 35.9,
+    "steps": 8,
+    "calls": 7,
+    "confirmed": true,
+    "claim": "DONE: OPEN. Wingstop can take a delivery order. || DONE: Ordered Buffalo Spicy Wings from Wingstop for delivery.",
+    "decider": "llm",
+    "trial": 1
+  },
+  {
+    "flow": "B lookup+parked order",
+    "status": "done/done",
+    "seconds": 49.8,
+    "lookup_s": 14.0,
+    "order_s": 35.8,
+    "steps": 8,
+    "calls": 7,
+    "confirmed": true,
+    "claim": "DONE: OPEN. Wingstop can take a delivery order. || DONE: Ordered Buffalo Spicy Wings from Wingstop for delivery.",
+    "decider": "llm",
+    "trial": 2
+  },
+  {
+    "flow": "B lookup+parked order",
+    "status": "done/done",
+    "seconds": 53.4,
+    "lookup_s": 15.7,
+    "order_s": 37.7,
+    "steps": 8,
+    "calls": 7,
+    "confirmed": true,
+    "claim": "DONE: OPEN. Wingstop can take a delivery order. || DONE: Ordered Buffalo Spicy Wings from Wingstop for delivery.",
+    "decider": "llm",
+    "trial": 3
+  }
+]

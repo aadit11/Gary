@@ -33,8 +33,28 @@ SITE_HINTS = {
 }
 
 
-def goal_with_hints(site: str, goal: str) -> str:
-    hint = SITE_HINTS.get(site, "")
+LOOKUP_HINT = (
+    "How to look a restaurant up on DashDish: use the search box at the top, open the restaurant by its "
+    "heading or link, and read whether it is open, closed, or not listed. Do not add items, open the cart, or place an order."
+)
+
+STAY_HINT = (
+    "You are already on the restaurant page. Do not go back to the home page and do not search for the restaurant again. "
+    "Find the dish on this menu, or the closest item to it if the exact name is not listed (say which one you chose). "
+    "The menu items are in the page tree; do not scroll around looking. Click the Add button next to it; a dialog appears with size options and an "
+    "'Add to cart' button, click that. Then open the cart: it is the button at the top right whose label is just the "
+    "item count (pattern ^\\d+$). Click Checkout in the cart drawer, and on the checkout page click Place Order. "
+    "The order is complete only after Place Order has been clicked and a confirmation is shown."
+)
+
+
+def goal_with_hints(site: str, goal: str, lookup: bool = False, stay: bool = False) -> str:
+    if lookup:
+        hint = LOOKUP_HINT
+    elif stay:
+        hint = STAY_HINT
+    else:
+        hint = SITE_HINTS.get(site, "")
     return goal + "\n\n" + hint if hint else goal
 
 

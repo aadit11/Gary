@@ -87,7 +87,7 @@ Flows:
 │   ├── clients/
 │   │   └── mock_services.py         # HTTP client for web/ mock APIs (owners add their own functions)
 │   ├── browser_agent/               # Muse Spark + REAL SDK: drives DashDish / Udriver in the background
-│   │   ├── muse.py                  # Meta Model API client (OpenAI-compatible, reasoning_effort)
+│   │   ├── muse.py                  # OpenRouter client (Claude Haiku 4.5, OpenAI-compatible)
 │   │   ├── agent.py                 # observation -> next action (axtree + screenshot prompt)
 │   │   ├── tasks.py                 # FreeformCloneTask: any goal on a REAL clone; per-site flow hints
 │   │   └── runner.py                # BrowserJobRunner: one worker thread, submit()/run_now()
@@ -272,8 +272,8 @@ GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REFRESH_TOKEN=
 
-# Meta Model API (Muse Spark) for the browser agent
-META_API_KEY=
+# OpenRouter (Claude Haiku 4.5) for the browser agent
+OPENROUTER_API_KEY=
 BROWSER_HEADLESS=false      # show the Chromium window during the demo
 
 # App

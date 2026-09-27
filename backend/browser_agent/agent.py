@@ -20,7 +20,7 @@ from browser_agent.actions import ACTION_SET
 
 log = logging.getLogger(__name__)
 
-AXTREE_CHAR_CAP = 25_000
+AXTREE_CHAR_CAP = 60_000  # a store page with reviews is ~30k; give the model the whole menu so it never scrolls
 MAX_MISSES = 3
 MAX_PLAN = 8
 
@@ -30,7 +30,8 @@ You are operating a web browser to complete a task on behalf of an older adult w
 
 Rules:
 - Only choose items, restaurants, addresses, and options that actually appear on the page. Never invent them.
-- If the goal names a specific item and it is not on the page, pick the closest match and say so in your final message.
+- If the goal names a specific item and it is not listed exactly, pick the closest item that IS on the menu (for example "8 piece" or "wings" -> the best-matching wings item) and say what you chose in your final message. Only report_infeasible if nothing on the menu is remotely related.
+- The tree already lists items that are off screen. Do not scroll to look for an item; read the tree. Never scroll more than twice in a row.
 - Follow the site's own flow to the end: the task is complete only after the final confirmation button (Place Order, Request, Book) has been clicked.
 - Plan ahead: output several actions in one block when you are confident of them, one per line, in order. Use bid actions like click("12") only for elements in the current tree. For elements that will appear after an earlier action (a dialog's confirm button, the cart's Checkout button, the checkout page's Place Order button), use the named actions: click_named("button", "Checkout.*"), fill_named("textbox", "Search", "Souvla"), press_named("textbox", "Search", "Enter"). Name patterns are case-insensitive regexes; wildcard prices with .*
 - If an action fails, you will be shown the page again and can re-plan from there.
@@ -57,6 +58,43 @@ send_msg_to_user("DONE: Ordered one Classic Cheeseburger from Souvla for deliver
 The order confirmation is showing, so the task is complete.
 ```
 send_msg_to_user("DONE: Ordered one Classic Cheeseburger from Souvla for delivery, total $21.77.")
+```"""
+
+LOOKUP_SYSTEM = """# Instructions
+
+You are operating a web browser to look up one restaurant for an older adult on the phone. Review the goal, the current page, and your past actions, then produce the next actions. Your answer is executed by a program, so follow the format exactly.
+
+Rules:
+- Only report what is actually on the page. Never invent a restaurant or a status.
+- This is a lookup. Do not add items, open the cart, or place an order.
+- Search for the restaurant and open its page. Plan ahead: put the search, Enter, and opening the result in one block using named actions, e.g. fill_named("textbox", "Search", "Souvla"), press_named("textbox", "Search", "Enter"), click_named("heading", "Souvla").
+- If the menu is available for delivery, the restaurant is open.
+- If the page says closed, unavailable, or not accepting orders, the restaurant is closed.
+- If no matching restaurant is listed, it is missing.
+- When you can tell, reply with exactly one of these and nothing else:
+  send_msg_to_user("DONE: OPEN. <restaurant> can take a delivery order.")
+  send_msg_to_user("DONE: CLOSED. <restaurant> is closed.")
+  send_msg_to_user("DONE: MISSING. <restaurant> is not on this site.")
+- Think briefly, then give the plan in a single ``` fenced code block, one action per line.
+"""
+
+LOOKUP_EXAMPLES = """Examples of answers:
+
+I am on the home page, so I will search for the restaurant and open it in one go.
+```
+fill_named("textbox", "Search", "Souvla")
+press_named("textbox", "Search", "Enter")
+click_named("heading", "Souvla")
+```
+
+The restaurant page shows a menu I can order from, so it is open. I will stop without adding anything.
+```
+send_msg_to_user("DONE: OPEN. Souvla can take a delivery order.")
+```
+
+The page says the restaurant is closed.
+```
+send_msg_to_user("DONE: CLOSED. Souvla is closed.")
 ```"""
 
 
@@ -120,6 +158,17 @@ def flatten_pruned(obs: dict) -> str:
     return text
 
 
+def full_text(obs: dict) -> str:
+    """Whole-page accessibility text (no cap), for verifying outcomes after a run."""
+    try:
+        return flatten_axtree_to_str(obs["axtree_object"], extra_properties=obs.get("extra_element_properties"), filter_with_bid_only=True)
+    except Exception:  # noqa: BLE001
+        try:
+            return flatten_axtree_to_str(obs["axtree_object"])
+        except Exception:  # noqa: BLE001
+            return ""
+
+
 def screenshot_data_url(image: Any) -> str:
     from PIL import Image
 
@@ -172,9 +221,12 @@ def terminal_message(action: str) -> tuple[str, str] | None:
 
 
 class MuseSparkAgent:
-    def __init__(self, goal: str, use_screenshot: bool = True, complete: Callable[..., str] | None = None):
+    def __init__(self, goal: str, use_screenshot: bool = True, complete: Callable[..., str] | None = None,
+                 system_text: str | None = None, examples: str | None = None):
         self.goal = goal
         self.use_screenshot = use_screenshot
+        self.system_text = system_text or SYSTEM_TEXT
+        self.examples = examples or EXAMPLES
         if complete is None:
             from browser_agent import muse
 
@@ -210,7 +262,7 @@ class MuseSparkAgent:
             parts.append({"type": "image_url", "image_url": {"url": screenshot_data_url(obs["screenshot"]), "detail": "auto"}})
         parts.append({
             "type": "text",
-            "text": "# Action Space\n\n" + ACTION_SET.describe(with_long_description=False, with_examples=True) + "\n\n" + EXAMPLES,
+            "text": "# Action Space\n\n" + ACTION_SET.describe(with_long_description=False, with_examples=True) + "\n\n" + self.examples,
         })
         if self.action_history:
             parts.append({"type": "text", "text": "# History of past actions (oldest first)\n\n" + "\n".join(self.action_history[-20:])
@@ -221,7 +273,7 @@ class MuseSparkAgent:
             "type": "text",
             "text": "# Next actions\n\nThink step by step about where you are in the flow and what remains, then give the plan in one fenced code block, one action per line.",
         })
-        return [{"role": "system", "content": SYSTEM_TEXT}, {"role": "user", "content": parts}]
+        return [{"role": "system", "content": self.system_text}, {"role": "user", "content": parts}]
 
     def next_plan(self, obs: dict) -> list[str]:
         """One model call -> a list of actions (possibly ending with a terminal action)."""

@@ -33,6 +33,7 @@ class Settings(BaseSettings):
 
     # Optional
     meta_api_key: str = ""
+    openrouter_api_key: str = ""
 
     # App
     public_base_url: str = ""
@@ -51,14 +52,15 @@ class Settings(BaseSettings):
 
     # Voice agent (Deepgram Voice Agent API)
     deepgram_agent_url: str = "wss://agent.deepgram.com/v1/agent/converse"
-    deepgram_think_model: str = "gpt-4o-mini"     # Deepgram-managed OpenAI model
+    deepgram_think_model: str = "gpt-4.1"         # Deepgram-managed OpenAI model; 4o-mini invents tool results, 4.1 follows the rules
     deepgram_voice: str = "flux-cole-en"          # Deepgram speak model (v2)
     port: int = 8000                              # local port; the MCP adapter connects over loopback
 
-    # Browser agent (Muse Spark on Meta Model API driving REAL clones)
+    # Browser agent (OpenRouter, Claude Haiku 4.5, driving REAL clones)
+    openrouter_api_base: str = "https://openrouter.ai/api/v1"
     meta_api_base: str = "https://api.meta.ai/v1"
-    muse_model: str = "muse-spark-1.3"
-    muse_reasoning_effort: str = "low"           # minimal | low | medium | high (Muse Spark is a reasoning model)
+    muse_model: str = "anthropic/claude-haiku-4.5"
+    muse_reasoning_effort: str = ""              # only sent for Muse Spark; Claude Haiku does not use it
     muse_max_tokens: int = 3000
     browser_headless: bool = True
     browser_max_steps: int = 25
@@ -68,6 +70,15 @@ class Settings(BaseSettings):
     browser_replay_verify: bool = False   # True = ask the model to confirm after a full replay (adds ~5-8 s)
     real_dashdish_url: str = "https://evals-dashdish.vercel.app"
     real_udriver_url: str = "https://evals-udriver.vercel.app"
+
+    # Jev (TypeSafe) decider for the browser agent: picks operation + element in ~0.4 s.
+    jev_api_key: str = ""
+    jev_model: str = "jev-latest"
+    jev_api_url: str = "https://api.typesafe.ai/v1/systemone"
+    browser_decider: str = "llm"           # llm (Claude Haiku etc. via muse_model) | jev
+
+    # Set GARY_NO_SCHEDULER=1 to skip the reminder scheduler (console testing).
+    gary_no_scheduler: bool = False
 
     # Set GARY_FAKE_DB=1 to force the in-memory database (tests, teammates without creds).
     gary_fake_db: bool = False

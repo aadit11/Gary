@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
         await adapter.start()
         app.state.adapter = adapter
         approvals.register(injection.on_approval_resolved)
-        scheduler = start_scheduler() if settings.public_base_url else None
+        scheduler = start_scheduler() if (settings.public_base_url and not settings.gary_no_scheduler) else None
         browser_runner = BrowserJobRunner()
         browser_runner.start()  # worker thread only; no browser opens until a job is submitted
         app.state.browser_runner = browser_runner
@@ -67,5 +67,5 @@ def health() -> dict:
         "mcp_servers": {name: f"{mount_path(name)}/mcp" for name in SERVERS},
         "db": "supabase" if settings.supabase_url and not settings.gary_fake_db else "fake",
         "sms": bool(settings.twilio_account_sid),
-        "browser_agent": {"model": settings.muse_model, "headless": settings.browser_headless, "configured": bool(settings.meta_api_key)},
+        "browser_agent": {"model": settings.muse_model, "headless": settings.browser_headless, "configured": bool(settings.openrouter_api_key)},
     }
