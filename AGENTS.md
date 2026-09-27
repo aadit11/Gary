@@ -191,7 +191,7 @@ def prepare_bill_payment(bill_id: str) -> str:
 | Server | Tools |
 |---|---|
 | checkins | `get_daily_briefing`, `get_upcoming_appointments`, `confirm_reminder` |
-| money | `list_bills_due`, `prepare_bill_payment`, `confirm_bill_payment`, `prepare_payment_to_person`, `check_message_for_scam`, `list_suspicious_emails` |
+| money | `list_bills_due`, `prepare_bill_payment`, `confirm_bill_payment`, `prepare_payment_to_person`, `confirm_payment_to_person`, `check_message_for_scam`, `list_suspicious_emails` |
 | orders | `get_favorite_orders`, `search_food_and_groceries`, `prepare_order`, `confirm_order`, `find_home_service`, `prepare_service_booking`, `confirm_service_booking` |
 | mobility | `prepare_ride`, `confirm_ride`, `get_ride_status`, `suggest_ride_for_appointment` |
 
@@ -281,6 +281,7 @@ PUBLIC_BASE_URL=            # public backend URL (ngrok or host) for Twilio webh
 MOCK_SERVICES_BASE_URL=     # web/ deployment URL
 DEMO_USER_ID=
 POLICY_SPENDING_LIMIT=100
+POLICY_HARD_LIMIT=20        # one-off payments above this need family approval; users.hard_limit overrides
 ```
 
 ## Commands

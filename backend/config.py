@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     mock_services_base_url: str = ""
     demo_user_id: str = ""
     policy_spending_limit: float = 100.0
+    # One-off (non-recurring) payments above this need family approval. users.hard_limit overrides it.
+    policy_hard_limit: float = 20.0
+    # A known biller's bill counts as recurring when within this fraction of its earlier paid amounts.
+    policy_recurring_tolerance: float = 0.25
 
     # Family messaging channel: "sms" (needs A2P 10DLC registration on the Twilio number) or
     # "whatsapp" (Twilio WhatsApp sandbox; family phone must first send the join message).

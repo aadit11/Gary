@@ -1,12 +1,17 @@
-"""policy.check(): spending limit, known vs new payees, scam patterns.
+"""policy.check(): scam patterns, spending limit, known vs new payees, recurring vs one-off.
 
 This is never an MCP tool. Every money-moving tool calls it internally (safety invariant 1).
 
-Phase 1 rules:
-  * amount > POLICY_SPENDING_LIMIT            -> needs approval
-  * payee not in known_payees for the user    -> needs approval
-  * message_text matches a scam pattern       -> needs approval
-Phase 2 (Person 2) refines the patterns and adds per-kind limits.
+Rules, in order (the first that matches decides):
+  1. payee or message_text matches a scam pattern          -> needs approval
+  2. amount > POLICY_SPENDING_LIMIT                         -> needs approval
+  3. bill/person payee not in known_payees                  -> needs approval
+  4. bill/person payment that is not recurring and amount
+     > the hard limit (users.hard_limit, else POLICY_HARD_LIMIT) -> needs approval
+
+A bill is recurring when its payee is a known biller and, if we have paid that payee before,
+the amount is within POLICY_RECURRING_TOLERANCE of those earlier payments. Person payments are
+never recurring. Orders, services, and rides are not subject to the hard limit.
 """
 
 from __future__ import annotations
@@ -18,6 +23,8 @@ from config import settings
 from core import db
 
 Kind = str  # "bill" | "person" | "order" | "service" | "ride"
+
+PAYMENT_KINDS = ("bill", "person")
 
 # (label, regex). Labels are plain words that can be spoken to the user.
 SCAM_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
@@ -38,6 +45,7 @@ class Decision:
     family_name: str = "your family"
     kind: Kind = ""
     flags: list[str] = field(default_factory=list)
+    recurring: bool = False
 
 
 def scam_flags(text: str | None) -> list[str]:
@@ -66,12 +74,54 @@ def approver_name(user_id: str) -> str:
     return "your family"
 
 
-def is_known_payee(user_id: str, payee: str | None) -> bool:
+def _known_payee(user_id: str, payee: str | None) -> dict | None:
     if not payee:
-        return False
+        return None
     res = db.get_client().table("known_payees").select("*").eq("user_id", user_id).execute()
     wanted = payee.strip().lower()
-    return any((r.get("name") or "").strip().lower() == wanted for r in res.data)
+    for r in res.data:
+        if (r.get("name") or "").strip().lower() == wanted:
+            return r
+    return None
+
+
+def is_known_payee(user_id: str, payee: str | None) -> bool:
+    return _known_payee(user_id, payee) is not None
+
+
+def hard_limit_for(user_id: str) -> float:
+    """The user's one-off payment limit: users.hard_limit when set, else POLICY_HARD_LIMIT."""
+    try:
+        rows = db.get_client().table("users").select("*").eq("id", user_id).limit(1).execute().data
+        value = rows[0].get("hard_limit") if rows else None
+        if value is not None:
+            return float(value)
+    except Exception:  # noqa: BLE001
+        pass
+    return float(settings.policy_hard_limit)
+
+
+def is_recurring_bill(user_id: str, payee: str | None, amount: float) -> bool:
+    """Known biller, and within tolerance of earlier paid amounts when there is history."""
+    known = _known_payee(user_id, payee)
+    if not known or (known.get("kind") or "biller") != "biller":
+        return False
+    paid = (
+        db.get_client()
+        .table("bills")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("status", "paid")
+        .execute()
+        .data
+    )
+    history = [float(b["amount"]) for b in paid if (b.get("payee") or "").strip().lower() == known["name"].strip().lower()]
+    if not history:
+        return True
+    typical = sum(history) / len(history)
+    if typical <= 0:
+        return False
+    return abs(amount - typical) / typical <= float(settings.policy_recurring_tolerance)
 
 
 def check(
@@ -83,7 +133,7 @@ def check(
 ) -> Decision:
     """Decide whether an action can proceed after read-back or needs family approval."""
     family = approver_name(user_id)
-    flags = scam_flags(message_text)
+    flags = scam_flags(" ".join(t for t in (payee, message_text) if t))
     amt = float(amount or 0)
     limit = float(settings.policy_spending_limit)
 
@@ -91,6 +141,12 @@ def check(
         return Decision(True, f"this looks like {flags[0]}", family, kind, flags)
     if amt > limit:
         return Decision(True, f"it's more than the usual limit of ${limit:,.0f}", family, kind)
-    if kind in ("bill", "person") and not is_known_payee(user_id, payee):
+    if kind in PAYMENT_KINDS and not is_known_payee(user_id, payee):
         return Decision(True, f"{payee} is someone we haven't paid before", family, kind)
-    return Decision(False, "", family, kind)
+
+    recurring = kind == "bill" and is_recurring_bill(user_id, payee, amt)
+    if kind in PAYMENT_KINDS and not recurring:
+        hard = hard_limit_for(user_id)
+        if amt > hard:
+            return Decision(True, f"it's a one-time payment over your ${hard:,.0f} limit", family, kind)
+    return Decision(False, "", family, kind, recurring=recurring)
