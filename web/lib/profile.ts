@@ -23,6 +23,13 @@ export const EXPENSE_CATEGORIES = [
   { id: "insurance", label: "Insurance" },
 ];
 
+export const BANKS = [
+  { id: "chase", label: "Chase", logo: "https://cdn.simpleicons.org/chase/117ACA" },
+  { id: "bankofamerica", label: "Bank of America", logo: "https://cdn.simpleicons.org/bankofamerica/012169" },
+  { id: "wellsfargo", label: "Wells Fargo", logo: "https://cdn.simpleicons.org/wellsfargo/D71E28" },
+  { id: "other", label: "Another bank", logo: "/brands/bank.svg" },
+];
+
 export const TIMEZONES = ["America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles"];
 
 export type ExpenseChoice = { category: string; due_day: number; active: boolean };
@@ -37,6 +44,8 @@ export type CareProfile = {
     uber: { connected: boolean; home: string; hospital: string; places: Place[] };
     groceries: { connected: boolean; store: string; restrictions: string[] };
     banking: { connected: boolean };
+    gmail: { connected: boolean; address: string };
+    bank: { connected: boolean; institution: string; last4: string };
   };
   weekly_days: Record<string, number>;
   onboarded: boolean;
@@ -52,6 +61,8 @@ export function emptyProfile(home = ""): CareProfile {
       uber: { connected: false, home, hospital: "", places: [] },
       groceries: { connected: false, store: "", restrictions: [] },
       banking: { connected: false },
+      gmail: { connected: false, address: "" },
+      bank: { connected: false, institution: "", last4: "" },
     },
     weekly_days: {},
     onboarded: false,
@@ -108,6 +119,12 @@ function asProfile(raw: unknown, home = ""): CareProfile {
         restrictions: cleanList(body.connectors?.groceries?.restrictions),
       },
       banking: { connected: Boolean(body.connectors?.banking?.connected) },
+      gmail: { connected: Boolean(body.connectors?.gmail?.connected), address: String(body.connectors?.gmail?.address || "") },
+      bank: {
+        connected: Boolean(body.connectors?.bank?.connected),
+        institution: BANKS.some((b) => b.id === body.connectors?.bank?.institution) ? String(body.connectors?.bank?.institution) : "",
+        last4: String(body.connectors?.bank?.last4 || "").replace(/\D/g, "").slice(-4),
+      },
     },
     weekly_days: body.weekly_days && typeof body.weekly_days === "object" ? body.weekly_days : {},
     onboarded: Boolean(body.onboarded),

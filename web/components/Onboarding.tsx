@@ -2,17 +2,18 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { CareProfile } from "@/lib/profile";
+import { BANKS, type CareProfile } from "@/lib/profile";
 import { PROVIDERS, type Key } from "@/lib/providers";
 import { PlaceList, TextList } from "@/components/ListEditor";
 
 type Phase = "idle" | "connecting" | "connected";
 
-export default function Onboarding({ initial, person }: { initial: CareProfile; person: string }) {
+export default function Onboarding({ initial, person, start }: { initial: CareProfile; person: string; start?: string }) {
   const router = useRouter();
-  const [step, setStep] = useState(0);
+  const startIndex = Math.max(0, PROVIDERS.findIndex((p) => p.key === start));
+  const [step, setStep] = useState(startIndex);
   const [profile, setProfile] = useState(initial);
-  const [phase, setPhase] = useState<Phase>(initial.connectors[PROVIDERS[0].key].connected ? "connected" : "idle");
+  const [phase, setPhase] = useState<Phase>(initial.connectors[PROVIDERS[startIndex].key].connected ? "connected" : "idle");
   const [status, setStatus] = useState("");
   const provider = PROVIDERS[step];
   const last = step === PROVIDERS.length - 1;
@@ -80,7 +81,7 @@ export default function Onboarding({ initial, person }: { initial: CareProfile; 
       <section className="connect-card" key={provider.key}>
         <div className="logo-pair">
           <div className="logo-circle gary" aria-hidden="true">G</div>
-          <div className="logo-circle"><img src={provider.logo} alt={`${provider.name} logo`} /></div>
+          <div className="logo-circle"><img src={provider.key === "bank" ? (BANKS.find((b) => b.id === c.bank.institution)?.logo || provider.logo) : provider.logo} alt={`${provider.name} logo`} /></div>
         </div>
         <h2>Gary uses <strong>{provider.name}</strong> to {provider.does} for {person}</h2>
         <p className="lede">Gary never asks {person} for a password or a card. It only uses what you connect here.</p>
@@ -90,7 +91,7 @@ export default function Onboarding({ initial, person }: { initial: CareProfile; 
 
         {phase === "idle" && (
           <div className="connect-actions">
-            <button type="button" onClick={connect} style={{ background: provider.color }}>Connect {provider.name}</button>
+            <button type="button" onClick={connect} style={{ background: provider.color }}>Connect {provider.key === "bank" ? "a bank" : provider.name}</button>
             <button type="button" className="quiet-link" onClick={skip}>Not now</button>
           </div>
         )}
@@ -99,7 +100,7 @@ export default function Onboarding({ initial, person }: { initial: CareProfile; 
         )}
         {phase === "connected" && (
           <>
-            <div className="connect-status"><span className="check" aria-hidden="true">✓</span> {provider.name} connected</div>
+            <div className="connect-status"><span className="check" aria-hidden="true">✓</span> {provider.key === "bank" ? (BANKS.find((b) => b.id === c.bank.institution)?.label || "Bank") : provider.name} connected</div>
             <div className="fields">
               {provider.key === "doordash" && (
                 <label>Usual order<input value={c.doordash.usual} onChange={(e) => setConnector("doordash", { usual: e.target.value })} placeholder="Chicken soup and tea" /></label>
@@ -111,6 +112,21 @@ export default function Onboarding({ initial, person }: { initial: CareProfile; 
                     Other places {person} goes
                     <PlaceList items={c.uber.places} onChange={(places) => setConnector("uber", { places })} />
                   </div>
+                </>
+              )}
+              {provider.key === "gmail" && (
+                <label>Email address<input type="email" value={c.gmail.address} onChange={(e) => setConnector("gmail", { address: e.target.value })} placeholder="margaret@gmail.com" /></label>
+              )}
+              {provider.key === "bank" && (
+                <>
+                  <label>Bank
+                    <select value={c.bank.institution} onChange={(e) => setConnector("bank", { institution: e.target.value })}>
+                      <option value="">Choose a bank</option>
+                      {BANKS.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+                    </select>
+                  </label>
+                  <label>Checking account, last 4 digits<input inputMode="numeric" maxLength={4} value={c.bank.last4} onChange={(e) => setConnector("bank", { last4: e.target.value.replace(/\D/g, "").slice(0, 4) })} placeholder="1234" /></label>
+                  <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>Demo only. No real bank is contacted and no credentials are stored.</p>
                 </>
               )}
               {provider.key === "groceries" && (

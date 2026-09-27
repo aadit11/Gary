@@ -1,6 +1,6 @@
 // App connectors shown in onboarding and on the landing page. Storage keys map to CareProfile.connectors.
 
-export type Key = "doordash" | "uber" | "groceries";
+export type Key = "doordash" | "uber" | "groceries" | "gmail" | "bank";
 
 export const PROVIDERS: {
   key: Key;
@@ -33,5 +33,21 @@ export const PROVIDERS: {
     color: "#FF3008",
     does: "order food",
     bullets: ["Order dinner, or \"the usual\", by phone", "Reads the order and total back before placing it", "Anything unusual waits for your okay"],
+  },
+  {
+    key: "gmail",
+    name: "Gmail",
+    logo: "https://cdn.simpleicons.org/gmail/EA4335",
+    color: "#EA4335",
+    does: "spot bills and scams",
+    bullets: ["Finds bills and appointment emails for the morning check-in", "Flags emails that look like scams before anyone acts on them", "Gary reads summaries, never sends email"],
+  },
+  {
+    key: "bank",
+    name: "your bank",
+    logo: "/brands/bank.svg",
+    color: "#1f3d34",
+    does: "pay the bills you approve",
+    bullets: ["Pays known bills after reading the amount back", "Anything over the limit or to someone new waits for your okay", "Nothing moves without a spoken yes on the call"],
   },
 ];

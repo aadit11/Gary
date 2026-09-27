@@ -4,7 +4,7 @@ import { loadProfile } from "@/lib/profile";
 
 export const dynamic = "force-dynamic";
 
-export default async function OnboardingPage({ searchParams }: { searchParams: Promise<{ fresh?: string }> }) {
+export default async function OnboardingPage({ searchParams }: { searchParams: Promise<{ fresh?: string; start?: string }> }) {
   const [saved, name, params] = await Promise.all([loadProfile(), careFirstName(), searchParams]);
   // ?fresh=1 (the landing page's Get started) always shows the connect flow from the start.
   const profile = params.fresh
@@ -18,7 +18,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
         <h1>Connect the apps Gary will use for {person}</h1>
         <p className="lede">One at a time. Gary never asks for a password or a card.</p>
       </div>
-      <Onboarding initial={profile} person={person} />
+      <Onboarding initial={profile} person={person} start={params.start} />
     </>
   );
 }
