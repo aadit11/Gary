@@ -26,7 +26,12 @@ _DEFAULT_BASE_URL = "http://localhost:3000"
 
 
 def _base_url() -> str:
-    return settings.mock_services_base_url or _DEFAULT_BASE_URL
+    url = (settings.mock_services_base_url or "").strip().rstrip("/")
+    if url.startswith(("http://", "https://")):
+        return url
+    if url:
+        log.warning("MOCK_SERVICES_BASE_URL %r has no http(s) scheme; using %s", url, _DEFAULT_BASE_URL)
+    return _DEFAULT_BASE_URL
 
 
 def search_services(query: str) -> dict[str, Any]:
