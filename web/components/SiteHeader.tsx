@@ -18,6 +18,7 @@ function current(href: string, path: string) {
 
 export default function SiteHeader({ name }: { name: string }) {
   const path = usePathname() || "/";
+  if (path.startsWith("/taskhare")) return null;
   const inCare = path.startsWith("/dashboard");
   return (
     <header className="site">
@@ -36,6 +37,7 @@ export default function SiteHeader({ name }: { name: string }) {
               <Link href="/dashboard/onboarding?fresh=1">Get started</Link>
               <Link href="/dashboard">Sign in</Link>
               <Link href="/mock/biller" className="quiet">Biller demo</Link>
+              <Link href="/taskhare" className="quiet">TaskHare</Link>
               <Link href="/mock/services" className="quiet">Services demo</Link>
             </>
           )}

@@ -97,6 +97,25 @@ button:hover { background: #2f3a35; }
 .often legend { width: 100%; font-size: 0.92rem; margin-bottom: 0.15rem; }
 .quiet-button.on { background: var(--sage); }
 
+.hare { max-width: 720px; }
+.hare-bar { display: flex; gap: 1rem; align-items: baseline; margin-bottom: 1.25rem; }
+.hare-brand { font-family: var(--serif); font-size: 1.6rem; text-decoration: none; }
+.hare-bar p { margin: 0; color: var(--muted); }
+.hare-search { display: grid; gap: 0.35rem; margin-bottom: 1rem; }
+.hare-search div { display: flex; gap: 0.5rem; }
+.hare-search input { flex: 1; }
+.hare-cats { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0 0 1.5rem; }
+.hare-cats a, .hare-times a, .hare-choose, .hare-confirm {
+  text-decoration: none; border-radius: 999px; padding: 0.45rem 0.85rem; background: #efeae3; color: var(--accent-deep);
+}
+.hare-times { list-style: none; padding: 0; display: grid; gap: 0.45rem; margin: 0 0 1rem; }
+.hare-times a.on, .hare-confirm { background: var(--accent-deep); color: #f7f4ef; }
+.hare-list { list-style: none; padding: 0; display: grid; gap: 0.75rem; }
+.hare-list li { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1rem; }
+.hare-list h2 { margin: 0 0 0.25rem; font-family: var(--serif); font-weight: 500; font-size: 1.25rem; }
+.hare-list p { margin: 0 0 0.7rem; color: var(--muted); }
+.hare-choose, .hare-confirm { display: inline-block; }
+
 @media (max-width: 800px) {
   .hero { grid-template-columns: 1fr; }
   .hero img { height: 180px; order: -1; }

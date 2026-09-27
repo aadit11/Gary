@@ -533,34 +533,79 @@ def prepare_service_booking(user_id: str, provider_id: str, category: str, time:
 
 @orders.tool()
 def confirm_service_booking(user_id: str, action_id: str) -> str:
-    """Book a previously prepared home service appointment after the user says yes."""
+    """Book a previously prepared home service appointment on TaskHare after the user says yes."""
     try:
         payload = pending.consume(action_id, "book_service", user_id)
     except PendingActionError as err:
         return speak(err.say, data={"category": "home_service", "outcome": "error"})
 
-    try:
-        booking = mock_services.create_service_booking(provider_id=payload["provider_id"], time=payload["time"])
-    except Exception:  # noqa: BLE001
-        log.exception("service booking failed")
-        return speak("I couldn't reach the scheduler just now, want me to try again?", data={"category": "home_service", "outcome": "error"})
-
-    try:
-        db.get_client().table("service_bookings").insert({
-            "user_id": user_id,
-            "category": payload["category"],
-            "provider": booking.get("provider", payload["provider"]),
-            "scheduled_at": booking.get("time", payload["time"]),
-            "price": booking.get("price", payload["price"]),
-            "status": "booked",
-            "external_id": booking.get("booking_id"),
-        }).execute()
-    except Exception:  # noqa: BLE001
-        log.exception("failed to record service booking for %s", user_id)
-
     provider_name = payload["provider"]
     when = date_str(payload["time"])
-    activity.log_event(user_id, "service_booking", f"Booked {provider_name} for {when}", {"category": "home_service", "outcome": "booked"})
-    notify.notify_family(user_id, f"{provider_name} is booked for {when} at your home.")
+    goal = (
+        f"On TaskHare, hire {provider_name} for {payload['category']} help. "
+        f"The visit should be {when}. "
+        "Search or open that tasker, choose that time, and click Confirm this visit. "
+        "Stop when the page says you're booked. Do not invent a tasker or a time."
+    )
+    call_loop = _call_loop()
+    caller = _caller_name(user_id)
+    notify.notify_family(
+        user_id,
+        f"{caller} asked to book {provider_name} for {when}. The request to book has been started.",
+    )
+    activity.log_event(
+        user_id,
+        "service_requested",
+        f"Started a booking for {provider_name}.",
+        {"category": "home_service", "outcome": "booking"},
+    )
 
-    return speak(f"You're all set, {provider_name} will come {when}.", data={"category": "home_service", "outcome": "booked"})
+    def on_done(job) -> None:
+        if getattr(job, "status", None) == "cancelled":
+            return
+        success = getattr(job, "status", None) == "done"
+        if success:
+            try:
+                db.get_client().table("service_bookings").insert({
+                    "user_id": user_id,
+                    "category": payload["category"],
+                    "provider": provider_name,
+                    "scheduled_at": payload["time"],
+                    "price": payload["price"],
+                    "status": "booked",
+                    "external_id": getattr(job, "id", "") or "taskhare",
+                }).execute()
+            except Exception:  # noqa: BLE001
+                log.exception("failed to record service booking for %s", user_id)
+        activity.log_event(
+            user_id,
+            "service_booking",
+            f"Booked {provider_name} for {when}" if success else f"Booking {provider_name} failed",
+            {"category": "home_service", "outcome": "booked" if success else "error"},
+        )
+        notify.notify_family(
+            user_id,
+            f"{provider_name} is booked for {when} at the home."
+            if success else
+            f"Sorry, the booking with {provider_name} didn't go through.",
+        )
+        message = (
+            f"You're booked. {provider_name} will come {when}."
+            if success else
+            f"I had trouble booking {provider_name}. Want me to try again?"
+        )
+        _speak_into_call(call_loop, user_id, message, behavior="queue")
+
+    app_module = importlib.import_module("main")
+    app_module.app.state.browser_runner.submit(
+        site="taskhare",
+        goal=goal,
+        user_id=user_id,
+        replay=False,
+        on_done=on_done,
+        on_progress=_progress_callback(call_loop, user_id, f"I'm still booking {provider_name}."),
+    )
+    return speak(
+        f"I'm booking {provider_name} on TaskHare for {when}. I'll tell you how it's going.",
+        data={"category": "home_service", "outcome": "booking"},
+    )

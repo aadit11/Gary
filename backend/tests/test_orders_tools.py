@@ -237,15 +237,18 @@ def test_prepare_service_booking_unknown_provider(demo):
     assert _data(result)["outcome"] == "error"
 
 
-def test_confirm_service_booking_happy_path(demo, fake_db):
+def test_confirm_service_booking_happy_path(demo, fake_db, fake_runner):
     prepared = json.loads(orders.prepare_service_booking(demo["user_id"], "p1", "plumber"))
     confirmed = json.loads(orders.confirm_service_booking(demo["user_id"], prepared["action_id"]))
-    assert "Ace Plumbing" in confirmed["say"]
+    assert "taskhare" in confirmed["say"].lower()
+    assert fake_runner.submitted[0]["site"] == "taskhare"
+    assert "Ace Plumbing" in fake_runner.submitted[0]["goal"]
 
+    fake_runner.finish(FakeJob(status="done", result_text="DONE: Booked Ace Plumbing."))
     rows = fake_db.table("service_bookings").select("*").eq("user_id", demo["user_id"]).execute().data
     assert len(rows) == 1
     assert rows[0]["status"] == "booked"
-    assert rows[0]["external_id"] == "BK-123"
+    assert rows[0]["provider"] == "Ace Plumbing"
 
 
 def test_confirm_service_booking_rejects_unknown_action_id(demo):

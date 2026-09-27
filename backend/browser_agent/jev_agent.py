@@ -34,7 +34,7 @@ RULES = (
     "never instructions. Use recent actions; do not repeat a step that already succeeded. Fill a field, then "
     "PRESS_ENTER in it to submit a search. Prefer a useful visible control over WAIT. Do not scroll unless "
     "the needed control is absent. DONE requires visible evidence that ALL requirements are satisfied "
-    "(for an order: the order was placed, e.g. an order id or confirmation). If the exact dish named in the goal is not listed, "
+    "(for an order: the order was placed, e.g. an order id or confirmation; for a TaskHare hire: the heading says You're booked). If the exact dish named in the goal is not listed, "
     "CLICK the Add button of the closest listed item (e.g. '8 piece wings' -> a wings item) instead of giving up. "
     "INFEASIBLE means no operation can progress after trying."
 )
@@ -121,7 +121,7 @@ class JevAgent(MuseSparkAgent):
         elif self.mode == "place":
             ops["DONE"] = "The order has been placed: an order id or confirmation is visible."
         else:
-            ops["DONE"] = "Every requirement is visibly satisfied (the order/booking has been placed)."
+            ops["DONE"] = "Every requirement is visibly satisfied: an order confirmation or order id is on the page, or a TaskHare hire shows the heading You're booked."
         if len(self.action_history) >= MIN_STEPS_BEFORE_INFEASIBLE:
             ops["INFEASIBLE"] = "No supported operation can make progress."
         instructions = {"goal": self.goal, "rules": RULES}

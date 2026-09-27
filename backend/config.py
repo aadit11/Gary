@@ -70,8 +70,10 @@ class Settings(BaseSettings):
     browser_replay_verify: bool = False   # True = ask the model to confirm after a full replay (adds ~5-8 s)
     real_dashdish_url: str = "https://evals-dashdish.vercel.app"
     real_udriver_url: str = "https://evals-udriver.vercel.app"
+    taskhare_url: str = "http://127.0.0.1:3000/taskhare"
 
     # Jev (TypeSafe) decider for the browser agent: picks operation + element in ~0.4 s.
+    # Used for DashDish, Udriver, and TaskHare when browser_decider is jev.
     jev_api_key: str = ""
     jev_model: str = "jev-latest"
     jev_api_url: str = "https://api.typesafe.ai/v1/systemone"

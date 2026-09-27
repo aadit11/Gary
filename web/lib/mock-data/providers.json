@@ -1,10 +1,12 @@
 [
-  {"id": "p1", "name": "Bay Plumbing Co.", "category": "plumber", "rating": 4.8, "price": 120, "next_slots": ["2026-09-26T10:00:00", "2026-09-26T14:00:00", "2026-09-27T09:00:00"]},
-  {"id": "p2", "name": "Rapid Rooter", "category": "plumber", "rating": 4.5, "price": 95, "next_slots": ["2026-09-26T16:00:00", "2026-09-27T11:00:00"]},
-  {"id": "p3", "name": "Golden Gate Plumbers", "category": "plumber", "rating": 4.7, "price": 140, "next_slots": ["2026-09-27T13:00:00"]},
-  {"id": "e1", "name": "BrightSpark Electric", "category": "electrician", "rating": 4.9, "price": 150, "next_slots": ["2026-09-26T09:00:00", "2026-09-27T15:00:00"]},
-  {"id": "e2", "name": "Ohm Sweet Home", "category": "electrician", "rating": 4.6, "price": 110, "next_slots": ["2026-09-26T13:00:00"]},
-  {"id": "h1", "name": "Handy Hank", "category": "handyman", "rating": 4.7, "price": 80, "next_slots": ["2026-09-26T11:00:00", "2026-09-26T15:00:00", "2026-09-27T10:00:00"]},
-  {"id": "h2", "name": "Fix-It Friends", "category": "handyman", "rating": 4.4, "price": 65, "next_slots": ["2026-09-27T14:00:00"]},
-  {"id": "c1", "name": "Sparkle Home Cleaning", "category": "cleaner", "rating": 4.8, "price": 90, "next_slots": ["2026-09-26T08:00:00", "2026-09-28T09:00:00"]}
+  {"id": "p1", "name": "Bay Plumbing Co.", "category": "plumber", "rating": 4.8, "price": 120, "next_slots": ["2026-09-28T10:00:00", "2026-09-28T14:00:00", "2026-09-29T09:00:00"]},
+  {"id": "p2", "name": "Rapid Rooter", "category": "plumber", "rating": 4.5, "price": 95, "next_slots": ["2026-09-28T16:00:00", "2026-09-29T11:00:00"]},
+  {"id": "p3", "name": "Golden Gate Plumbers", "category": "plumber", "rating": 4.7, "price": 140, "next_slots": ["2026-09-29T13:00:00"]},
+  {"id": "e1", "name": "BrightSpark Electric", "category": "electrician", "rating": 4.9, "price": 150, "next_slots": ["2026-09-28T09:00:00", "2026-09-29T15:00:00"]},
+  {"id": "e2", "name": "Ohm Sweet Home", "category": "electrician", "rating": 4.6, "price": 110, "next_slots": ["2026-09-28T13:00:00"]},
+  {"id": "h1", "name": "Handy Hank", "category": "handyman", "rating": 4.7, "price": 80, "next_slots": ["2026-09-28T11:00:00", "2026-09-28T15:00:00", "2026-09-29T10:00:00"]},
+  {"id": "h2", "name": "Fix-It Friends", "category": "handyman", "rating": 4.4, "price": 65, "next_slots": ["2026-09-29T14:00:00"]},
+  {"id": "c1", "name": "Sparkle Home Cleaning", "category": "cleaner", "rating": 4.8, "price": 90, "next_slots": ["2026-09-28T08:00:00", "2026-09-30T09:00:00"]},
+  {"id": "y1", "name": "Green Porch Yard Care", "category": "yard", "rating": 4.7, "price": 70, "next_slots": ["2026-09-29T09:00:00", "2026-09-30T10:00:00"]},
+  {"id": "a1", "name": "Together Assembly", "category": "assembly", "rating": 4.8, "price": 85, "next_slots": ["2026-09-28T13:00:00", "2026-09-30T11:00:00"]}
 ]
