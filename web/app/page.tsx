@@ -23,7 +23,7 @@ export default async function Home() {
             <span>Works with</span>
             <div className="brand-row">
               {PROVIDERS.map((p) => (
-                <span className="brand-chip" key={p.key}><img src={p.logo} alt="" /> {p.key === "bank" ? "Your bank" : p.name}</span>
+                <span className="brand-chip" key={p.key}><img src={p.logo} alt="" /> {p.key === "bank" ? "Bank" : p.name}</span>
               ))}
             </div>
           </div>

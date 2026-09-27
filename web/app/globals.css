@@ -110,7 +110,7 @@ button:hover { background: #2f3a35; }
 .landing-cta .quiet-link { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
 .works-with { display: flex; align-items: center; gap: 1.25rem; margin: 1.75rem 0 0.5rem; color: var(--muted); font-size: 0.9rem; flex-wrap: wrap; }
 .works-with .brand-row { display: flex; gap: 1rem; align-items: center; }
-.brand-chip { display: inline-flex; align-items: center; gap: 0.45rem; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 0.35rem 0.8rem 0.35rem 0.5rem; color: inherit; font-size: 0.9rem; }
+.brand-chip { display: inline-flex; align-items: center; white-space: nowrap; gap: 0.45rem; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 0.35rem 0.8rem 0.35rem 0.5rem; color: inherit; font-size: 0.9rem; }
 .brand-chip img { width: 20px; height: 20px; }
 
 .connect-wrap { display: grid; justify-items: center; gap: 1rem; margin-top: 0.5rem; }
