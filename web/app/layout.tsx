@@ -1,20 +1,15 @@
-import Link from "next/link";
+import SiteHeader from "@/components/SiteHeader";
+import { careFirstName } from "@/lib/care";
 import "./globals.css";
 
-export const metadata = { title: "Gary", description: "Family dashboard and mock services for the Gary voice assistant" };
+export const metadata = { title: "Gary", description: "A quiet desk for the people who look after someone Gary calls" };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const name = await careFirstName();
   return (
     <html lang="en">
       <body>
-        <nav>
-          <span className="brand">Gary</span>
-          <Link href="/dashboard">Activity</Link>
-          <Link href="/dashboard/reminders">Reminders</Link>
-          <Link href="/dashboard/approvals">Approvals</Link>
-          <Link href="/mock/biller">Mock biller</Link>
-          <Link href="/mock/services">Mock home services</Link>
-        </nav>
+        <SiteHeader name={name} />
         <main>{children}</main>
       </body>
     </html>
