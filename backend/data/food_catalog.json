@@ -1,0 +1,10 @@
+[
+  {"id": "f1", "name": "Classic Cheeseburger", "vendor": "Souvla", "price": 12.99, "tags": ["burger", "cheeseburger"]},
+  {"id": "f2", "name": "Tomato Basil Soup", "vendor": "Souvla", "price": 8.50, "tags": ["soup"]},
+  {"id": "f3", "name": "Greek Salad", "vendor": "Souvla", "price": 10.25, "tags": ["salad", "greek"]},
+  {"id": "f4", "name": "Chicken Noodle Soup", "vendor": "Corner Deli", "price": 7.75, "tags": ["soup", "chicken"]},
+  {"id": "f5", "name": "Turkey Sandwich", "vendor": "Corner Deli", "price": 9.50, "tags": ["sandwich", "turkey"]},
+  {"id": "f6", "name": "Milk, 1 Gallon", "vendor": "Corner Deli", "price": 4.29, "tags": ["grocery", "milk"]},
+  {"id": "f7", "name": "Bananas, Bunch", "vendor": "Corner Deli", "price": 1.99, "tags": ["grocery", "fruit", "bananas"]},
+  {"id": "f8", "name": "Eggs, Dozen", "vendor": "Corner Deli", "price": 3.49, "tags": ["grocery", "eggs"]}
+]
