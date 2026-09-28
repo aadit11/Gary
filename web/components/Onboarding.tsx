@@ -187,7 +187,7 @@ export default function Onboarding({
               </label>
               <label>
                 Their phone
-                <input type="tel" inputMode="tel" value={contacts.person.phone} onChange={(e) => setPerson({ phone: e.target.value })} placeholder="(408) 981-4724" autoComplete="off" aria-invalid={Boolean(errors["person.phone"])} />
+                <input type="tel" inputMode="tel" value={contacts.person.phone} onChange={(e) => setPerson({ phone: e.target.value })} placeholder="(408) 555-0123" autoComplete="off" aria-invalid={Boolean(errors["person.phone"])} />
                 {errors["person.phone"] && <span className="field-error">{errors["person.phone"]}</span>}
               </label>
               <label>

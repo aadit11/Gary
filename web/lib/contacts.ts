@@ -26,7 +26,7 @@ export function normalizeUsPhone(raw: string): string | null {
   return "+1" + digits;
 }
 
-/** "+14089814724" -> "(408) 981-4724"; anything that is not a valid US number comes back unchanged. */
+/** "+14085550123" -> "(408) 555-0123"; anything that is not a valid US number comes back unchanged. */
 export function formatPhone(value: string): string {
   const e164 = normalizeUsPhone(value);
   if (!e164) return value;

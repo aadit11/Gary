@@ -23,7 +23,7 @@ def _real_number(fake_db, demo):
 def _creds(monkeypatch):
     monkeypatch.setattr(settings, "twilio_account_sid", "ACxxx")
     monkeypatch.setattr(settings, "twilio_auth_token", "tok")
-    monkeypatch.setattr(settings, "twilio_phone_number", "+14089814724")
+    monkeypatch.setattr(settings, "twilio_phone_number", "+14085550123")
 
 
 def test_unknown_user_is_404(demo):
