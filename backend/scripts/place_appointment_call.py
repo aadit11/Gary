@@ -4,10 +4,13 @@ Run from backend/ with the backend and ngrok running:
 
   uv run python scripts/place_appointment_call.py                   # next Dr. Patel appointment as saved
   uv run python scripts/place_appointment_call.py --in-minutes 60   # first move it to an hour from now
+  uv run python scripts/place_appointment_call.py --medication ""   # skip the medication opener
   uv run python scripts/place_appointment_call.py --match "prescription"
 
-The call says "according to your email you have <appointment> at <place>" and offers a ride;
-prepare_ride then holds a place the family has not saved for their okay by text.
+The call opens with the medication reminder ("It's time for your daily magnesium glycinate"),
+waits for the person to say they took it, then says "according to your email you have
+<appointment> in about an hour at <place>" and offers a ride; prepare_ride holds a place the
+family has not saved for their okay by text.
 """
 
 import argparse
@@ -31,6 +34,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--match", default="Dr. Patel", help="pick the appointment whose title or subject contains this")
     ap.add_argument("--in-minutes", type=int, default=None, help="move the appointment to this many minutes from now first")
+    ap.add_argument("--medication", default="magnesium glycinate", help="open the call with this daily medication reminder; pass \"\" for none")
     args = ap.parse_args()
 
     uid = settings.demo_user_id
@@ -58,10 +62,21 @@ def main() -> None:
 
     starts_local = datetime.fromisoformat(extra["starts_at"]).astimezone(tz)
     title = extra.get("title") or appt.get("subject") or "an appointment"
-    note = f"{title} on {date_str(starts_local)}"
+    minutes = (starts_local - datetime.now(tz)).total_seconds() / 60
+    if 40 <= minutes <= 80:
+        when = "in about an hour"
+    elif 5 <= minutes < 40:
+        when = f"in about {int(round(minutes / 5) * 5)} minutes"
+    else:
+        when = f"on {date_str(starts_local)}"
+    if title.lower().startswith("dr"):
+        title = f"a doctor's appointment with {title}"
+    note = f"Appointment: {title} {when}"
     if extra.get("location"):
         note += f" at {str(extra['location']).rstrip('.')}"
-    print("appointment:", note)
+    if args.medication.strip():
+        note = f"Medication reminder: their daily {args.medication.strip()}. {note}"
+    print("call text:", note)
     sid = place_outbound_call(uid, "appointment", note=note)
     print("call sid:", sid or "FAILED (see backend log)")
 

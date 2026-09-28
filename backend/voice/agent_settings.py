@@ -56,7 +56,7 @@ GREETINGS = {
     "inbound": "Hello {user_name}, this is Gary. How can I help you today?",
     "morning_briefing": "Good morning {user_name}, it's Gary calling with your morning check-in. How did you sleep?",
     "reminder": "Hello {user_name}, it's Gary calling with a quick reminder.",
-    "appointment": "Hello {user_name}, it's Gary calling about an appointment.",
+    "appointment": "Hello {user_name}, it's Gary calling.",
 }
 
 
