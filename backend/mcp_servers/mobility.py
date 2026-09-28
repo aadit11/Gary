@@ -88,10 +88,14 @@ def _search_term(place: str) -> str:
 
 # What the caller hears while the browser books the ride: (seconds since the job started, line).
 RIDE_PROGRESS = [
-    (5, "Alright, the ride is in. It's looking for a driver now."),
-    (22, "Still looking for a driver. Almost there."),
-    (42, "Thanks for your patience, it's nearly set."),
+    (3, "I'm looking for drivers right now. We should have one in a few minutes."),
+    (18, "Still looking for a driver. Just a moment more."),
+    (34, "Almost there, thanks for your patience."),
+    (52, "Still searching. I'll tell you the moment a driver is set."),
 ]
+
+# Spoken into the call the moment the family says yes (voice/injection.py reads payload.done_say).
+FAMILY_YES_SAY = "I'm looking for a driver right now. We should have one in a few minutes."
 
 
 def _ride_progress(call_loop, user_id: str):
@@ -144,7 +148,7 @@ def prepare_ride(user_id: str, destination: str, pickup: str = "") -> str:
         return speak("Where would you like to go?", data={"category": "ride", "outcome": "resolved"})
     pickup = (pickup or "").strip() or _home(user_id)
     decision = policy.check(kind="ride", payee=destination, amount=0, user_id=user_id)
-    payload = {"pickup": pickup, "destination": destination, "summary": f"book a ride from home to {destination}"}
+    payload = {"pickup": pickup, "destination": destination, "summary": f"book a ride from home to {destination}", "done_say": FAMILY_YES_SAY}
     if decision.needs_approval:
         approvals.request(user_id=user_id, action="book_ride", payload=payload, reason=decision.reason,
                           summary=f"a ride from home to {destination}")
