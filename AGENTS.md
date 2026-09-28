@@ -117,7 +117,8 @@ Flows:
     │   ├── layout.tsx
     │   ├── page.tsx                 # landing / links
     │   ├── dashboard/
-    │   │   ├── page.tsx             # activity log
+    │   │   ├── page.tsx             # recent calls (one card per call) and notes for the family
+    │   │   ├── calls/[id]/page.tsx  # everything that happened on one call
     │   │   ├── reminders/page.tsx   # schedule reminders
     │   │   └── approvals/page.tsx   # approval history
     │   ├── mock/
