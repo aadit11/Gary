@@ -61,6 +61,7 @@ Things another person needs to know to build on your work: signature changes, ne
 
 One line per merged PR, newest first. Keep it to what changed, not how.
 
+- 2026-09-28: Dashboard feed grouped into clickable calls (`/dashboard/calls/[id]`, keyed by the call_started log row), every event kind labeled in sentence case, browser-job log lines rewritten for families. Branch `dashboard-calls`.
 - 2026-09-28: Rides on Udriver through the browser (`mobility.py`): unsaved destinations held for family YES, driver details spoken back; appointment calls offer the ride; `place_appointment_call.py`; Udriver v1 task fix and patient waits in Jev. Branch `rides-udriver`.
 - 2026-09-28: Onboarding collects the elder's and caregiver's real names and phones into `users` / `family_contacts`; hello text to the caregiver via `POST /notify/welcome`; both editable on the profile Settings tab. Branch `onboarding-contacts`.
 - 2026-09-27: Home services run through the browser on TaskHare (search, read-back, booking); no services API. Family YES on a held booking now books it. Branch `taskhare-browser-search`.
