@@ -41,6 +41,16 @@ def _can_message(phone: str) -> bool:
     return digits[1:4] not in {"500", "555"}
 
 
+def can_message(phone: str) -> bool:
+    """True when Gary could text this number: a US number outside the fictional 500/555 ranges."""
+    return _can_message(normalize_phone(phone))
+
+
+def is_configured() -> bool:
+    """True when Twilio credentials and a from-number are set."""
+    return bool(settings.twilio_account_sid and settings.twilio_auth_token and settings.twilio_phone_number)
+
+
 def addresses(to: str) -> tuple[str, str]:
     """Return (to, from) Twilio addresses for the configured family channel."""
     to = normalize_phone(to)

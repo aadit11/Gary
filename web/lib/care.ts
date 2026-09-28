@@ -18,6 +18,7 @@ const KIND_LABEL: Record<string, string> = {
   appointment_reminded: "Appointment reminder",
   expense_reminded: "Bill reminder",
   family_summary: "Note for you",
+  family_welcomed: "Hello text sent",
 };
 
 const TOOL_LABEL: Record<string, string> = {

@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from config import settings  # noqa: E402
 from core import db  # noqa: E402
 
 DEMO = {
@@ -49,7 +50,12 @@ DEMO = {
 
 def main() -> None:
     client = db.get_client()
-    existing = client.table("users").select("*").eq("phone", DEMO["user"]["phone"]).limit(1).execute().data
+    # Onboarding may have changed the demo user's phone, so look the user up by DEMO_USER_ID first.
+    existing = []
+    if settings.demo_user_id:
+        existing = client.table("users").select("*").eq("id", settings.demo_user_id).limit(1).execute().data
+    if not existing:
+        existing = client.table("users").select("*").eq("phone", DEMO["user"]["phone"]).limit(1).execute().data
     if existing:
         user = existing[0]
         print(f"user exists: {user['id']}")

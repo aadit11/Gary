@@ -4,6 +4,7 @@ import { useState } from "react";
 import { PROVIDERS } from "@/lib/providers";
 import { PlaceList, TextList } from "@/components/ListEditor";
 import Link from "next/link";
+import { RELATIONSHIPS, forDisplay, validateContacts, welcomeCopy, type ContactField, type Contacts } from "@/lib/contacts";
 import {
   DIET_OPTIONS,
   EXPENSE_CATEGORIES,
@@ -22,11 +23,33 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "diet", label: "Diet" },
 ];
 
-export default function ProfileEditor({ initial, person, startTab = "settings" }: { initial: CareProfile; person: Person; startTab?: Tab }) {
+export default function ProfileEditor({
+  initial,
+  contacts: initialContacts,
+  person,
+  startTab = "settings",
+}: {
+  initial: CareProfile;
+  contacts: Contacts;
+  person: Person;
+  startTab?: Tab;
+}) {
   const [tab, setTab] = useState<Tab>(startTab);
   const [profile, setProfile] = useState(initial);
   const [timezone, setTimezone] = useState(person.timezone || "America/New_York");
+  const [contacts, setContacts] = useState<Contacts>(() => forDisplay(initialContacts));
+  const [errors, setErrors] = useState<Partial<Record<ContactField, string>>>({});
   const [status, setStatus] = useState("");
+
+  function setPerson(patch: Partial<Contacts["person"]>) {
+    setContacts((c) => ({ ...c, person: { ...c.person, ...patch } }));
+  }
+  function setCaregiver(patch: Partial<Contacts["caregiver"]>) {
+    setContacts((c) => ({ ...c, caregiver: { ...c.caregiver, ...patch } }));
+  }
+  const relationships = RELATIONSHIPS.includes(contacts.caregiver.relationship) || !contacts.caregiver.relationship
+    ? RELATIONSHIPS
+    : [...RELATIONSHIPS, contacts.caregiver.relationship];
 
   function patchExpense(category: string, next: Partial<CareProfile["expenses"][number]>) {
     setProfile({
@@ -36,20 +59,36 @@ export default function ProfileEditor({ initial, person, startTab = "settings" }
   }
 
   async function save() {
+    const check = validateContacts(contacts);
+    if (!check.ok) {
+      setErrors(check.field ? { [check.field]: check.error } : {});
+      setStatus(check.field ? "Check the highlighted field under Settings." : check.error);
+      if (check.field) setTab("settings");
+      return;
+    }
+    setErrors({});
     setStatus("Saving…");
     const res = await fetch("/api/profile", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile, timezone }),
+      body: JSON.stringify({ profile, timezone, contacts: check.value }),
     });
-    if (res.ok) setStatus("Saved.");
-    else {
-      const body = await res.json().catch(() => ({ error: "unknown" }));
+    const body = await res.json().catch(() => ({ error: "unknown" }));
+    if (res.ok) {
+      if (body.contacts) setContacts(forDisplay(body.contacts));
+      // The route texts the caregiver only when their number changed; say so when it did.
+      const hello = welcomeCopy(body.welcome, (body.contacts?.caregiver.name || contacts.caregiver.name).split(" ")[0]);
+      setStatus(hello ? "Saved. " + hello.replace(/^Saved\. /, "") : "Saved.");
+    } else {
+      if (body.field) {
+        setErrors({ [body.field]: body.error });
+        setTab("settings");
+      }
       setStatus("Could not save. " + (body.error || ""));
     }
   }
 
-  const first = person.name?.split(" ")[0] || "them";
+  const first = contacts.person.name.trim().split(" ")[0] || person.name?.split(" ")[0] || "them";
 
   return (
     <div>
@@ -66,7 +105,44 @@ export default function ProfileEditor({ initial, person, startTab = "settings" }
           <h2>Settings</h2>
           <p className="lede">These are the details Gary already uses for {first}. Calls follow this clock.</p>
           <div className="stack">
-            <article className="decision"><strong>{person.name || "Name not set"}</strong><p className="muted">Phone ending {person.phone?.slice(-4) || "----"}</p></article>
+            <article className="decision">
+              <strong>Who Gary calls</strong>
+              <div className="fields">
+                <label>
+                  Their name
+                  <input value={contacts.person.name} onChange={(e) => setPerson({ name: e.target.value })} aria-invalid={Boolean(errors["person.name"])} />
+                  {errors["person.name"] && <span className="field-error">{errors["person.name"]}</span>}
+                </label>
+                <label>
+                  Phone Gary answers
+                  <input type="tel" inputMode="tel" value={contacts.person.phone} onChange={(e) => setPerson({ phone: e.target.value })} placeholder="(408) 981-4724" aria-invalid={Boolean(errors["person.phone"])} />
+                  {errors["person.phone"] && <span className="field-error">{errors["person.phone"]}</span>}
+                </label>
+              </div>
+            </article>
+            <article className="decision">
+              <strong>Who Gary texts for approvals</strong>
+              <div className="fields">
+                <label>
+                  Your name
+                  <input value={contacts.caregiver.name} onChange={(e) => setCaregiver({ name: e.target.value })} aria-invalid={Boolean(errors["caregiver.name"])} />
+                  {errors["caregiver.name"] && <span className="field-error">{errors["caregiver.name"]}</span>}
+                </label>
+                <label>
+                  You are their
+                  <select value={contacts.caregiver.relationship} onChange={(e) => setCaregiver({ relationship: e.target.value })}>
+                    <option value="">Choose one</option>
+                    {relationships.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Your mobile
+                  <input type="tel" inputMode="tel" value={contacts.caregiver.phone} onChange={(e) => setCaregiver({ phone: e.target.value })} placeholder="(650) 123-4567" aria-invalid={Boolean(errors["caregiver.phone"])} />
+                  {errors["caregiver.phone"] && <span className="field-error">{errors["caregiver.phone"]}</span>}
+                </label>
+              </div>
+              <p className="muted" style={{ fontSize: "0.85rem" }}>Approval requests are texted here. Changing this number sends a hello text to the new one.</p>
+            </article>
             <label>
               Clock
               <select value={timezone} onChange={(e) => setTimezone(e.target.value)}>

@@ -21,6 +21,7 @@ from voice import injection
 from voice.mcp_adapter import MCPAdapter
 from voice.twilio_routes import router as voice_router
 from webhooks.sms import router as sms_router
+from webhooks.welcome import router as welcome_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("gary")
@@ -54,6 +55,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Gary backend", lifespan=lifespan)
 app.include_router(sms_router)
+app.include_router(welcome_router)
 app.include_router(voice_router)
 
 for _name, _mcp_app in _mcp_apps.items():
