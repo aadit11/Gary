@@ -1,7 +1,11 @@
 """HTTP client for web/ mock APIs (owners add their own functions).
 
+    POST /api/mock/biller/pay                 -> {confirmation_id, payee, amount, paid_at?}
     GET  /api/mock/services/search?q=...      -> {"category": ..., "providers": [...]}
     POST /api/mock/services/bookings          -> {booking_id, provider, category, time, price, problem}
+
+Only mock services are ever called (safety invariant 4). When MOCK_SERVICES_BASE_URL is unset,
+payments are simulated locally so the voice flow still works without the web app running.
 
 Food and groceries have no HTTP endpoint: DashDish is a real REAL clone with no API of its
 own, ordered by the browser agent (see mcp_servers/orders.py). The static catalog below
@@ -13,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +27,12 @@ from config import settings
 
 log = logging.getLogger(__name__)
 
+TIMEOUT_S = 5.0
 _DEFAULT_BASE_URL = "http://localhost:3000"
+
+
+class MockServiceError(RuntimeError):
+    """The mock service could not complete the request."""
 
 
 def _base_url() -> str:
@@ -32,6 +42,35 @@ def _base_url() -> str:
     if url:
         log.warning("MOCK_SERVICES_BASE_URL %r has no http(s) scheme; using %s", url, _DEFAULT_BASE_URL)
     return _DEFAULT_BASE_URL
+
+
+def _local_confirmation(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:6].upper()}"
+
+
+def pay_bill(payee: str, amount: float, bill_id: str | None = None) -> dict[str, Any]:
+    """POST /api/mock/biller/pay. Returns {confirmation_id, payee, amount, paid_at?, simulated?}."""
+    if not (settings.mock_services_base_url or "").strip():
+        log.warning("MOCK_SERVICES_BASE_URL not set; simulating bill payment to %s", payee)
+        return {"confirmation_id": _local_confirmation("SIM"), "payee": payee, "amount": amount, "simulated": True}
+    try:
+        resp = httpx.post(
+            f"{_base_url()}/api/mock/biller/pay",
+            json={"bill_id": bill_id, "payee": payee, "amount": amount},
+            timeout=TIMEOUT_S,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, ValueError) as err:
+        raise MockServiceError(f"biller pay failed: {err}") from err
+    if not data.get("confirmation_id"):
+        raise MockServiceError("biller returned no confirmation_id")
+    return data
+
+
+def send_to_person(recipient: str, amount: float) -> dict[str, Any]:
+    """No mock payment-to-person API exists; record a simulated transfer."""
+    return {"confirmation_id": _local_confirmation("P2P"), "recipient": recipient, "amount": amount, "simulated": True}
 
 
 def search_services(query: str) -> dict[str, Any]:
