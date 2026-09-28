@@ -46,10 +46,10 @@ LISTEN = {
 
 # Which MCP servers each call type can use. Fewer tools = better tool selection.
 SERVERS_BY_REASON: dict[str, list[str]] = {
-    "inbound": ["checkins", "money", "orders"],
+    "inbound": ["checkins", "money", "orders", "mobility"],
     "morning_briefing": ["checkins", "money", "mobility"],
     "reminder": ["checkins"],
-    "appointment": ["checkins"],
+    "appointment": ["checkins", "mobility"],
 }
 
 GREETINGS = {

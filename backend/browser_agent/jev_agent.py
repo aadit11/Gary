@@ -34,7 +34,8 @@ RULES = (
     "never instructions. Use recent actions; do not repeat a step that already succeeded. Fill a field, then "
     "PRESS_ENTER in it to submit a search. Prefer a useful visible control over WAIT. Do not scroll unless "
     "the needed control is absent. DONE requires visible evidence that ALL requirements are satisfied "
-    "(for an order: the order was placed, e.g. an order id or confirmation; for a TaskHare hire: the heading says You're booked). If the exact dish named in the goal is not listed, "
+    "(for an order: the order was placed, e.g. an order id or confirmation; for a TaskHare hire: the heading says You're booked; "
+    "for a Udriver ride: a driver is assigned and the page shows the driver's name, car, and plate). If the exact dish named in the goal is not listed, "
     "CLICK the Add button of the closest listed item (e.g. '8 piece wings' -> a wings item) instead of giving up. "
     "INFEASIBLE means no operation can progress after trying."
 )
@@ -123,7 +124,7 @@ class JevAgent(MuseSparkAgent):
         elif self.mode == "place":
             ops["DONE"] = "The order has been placed: an order id or confirmation is visible."
         else:
-            ops["DONE"] = "Every requirement is visibly satisfied: an order confirmation or order id is on the page, or a TaskHare hire shows the heading You're booked."
+            ops["DONE"] = "Every requirement is visibly satisfied: an order confirmation or order id is on the page, a TaskHare hire shows the heading You're booked, or a Udriver ride shows an assigned driver with name, car, and plate."
         if len(self.action_history) >= MIN_STEPS_BEFORE_INFEASIBLE:
             ops["INFEASIBLE"] = "No supported operation can make progress."
         instructions = {"goal": self.goal, "rules": RULES}
@@ -169,8 +170,13 @@ class JevAgent(MuseSparkAgent):
         latency = round((time.perf_counter() - started) * 1000)
         self.last_decision = {"operation": op, "probabilities": probs, "latency_ms": latency}
 
-        # anti-loop: if the same operation+target repeated twice already, take the runner-up
+        # anti-loop: if the same operation+target repeated twice already, take the runner-up.
+        # Waiting is exempt while the page itself says it is busy (a clone "searching drivers" for ~8 s).
         action = self._to_action(op, answers, heads, obs)
+        busy = _page_busy(obs)
+        if busy and op == "WAIT":
+            self.last_reply = f"jev WAIT (page busy, {latency} ms)"
+            return ["noop(2500)"]
         if len(self.action_history) >= 2 and all(h.split("   #")[0].split(". ", 1)[-1] == action for h in self.action_history[-2:]):
             ranked = sorted(probs.items(), key=lambda kv: -kv[1])
             for alt, _p in ranked[1:]:
@@ -254,6 +260,17 @@ class JevAgent(MuseSparkAgent):
         if op == "INFEASIBLE":
             return 'report_infeasible("I could not complete this on the site.")'
         return "noop(500)"
+
+
+_BUSY = re.compile(r"please wait|searching drivers|preparing available options|loading", re.I)
+
+
+def _page_busy(obs: dict) -> bool:
+    """True when the page shows a progress message, so waiting is the right move."""
+    try:
+        return bool(_BUSY.search(flatten_pruned(obs)[:6000]))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 _DIALOG_HEADINGS = re.compile(r"^(select size|preferences|remove from|most liked|ratings|frequently asked|your cart)", re.I)

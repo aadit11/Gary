@@ -73,7 +73,7 @@ DEMO_EMAILS: list[dict[str, Any]] = [
             "Springfield Medical Clinic\n\n"
             "This is a reminder of your doctor's appointment with Dr. Patel.\n"
             f"When: {_APPT_DAY} at 2:00 PM\n"
-            "Location: Springfield Medical, 200 Oak Avenue\n\n"
+            "Location: Health System Pharmacy, 550 16th Street\n\n"
             "Please arrive 10 minutes early.\n"
         ),
     },
@@ -125,7 +125,7 @@ DEMO_EMAILS: list[dict[str, Any]] = [
 # Calendar event created alongside the doctor appointment email (seed_gmail.py).
 DOCTOR_EVENT = {
     "summary": "Dr. Patel appointment",
-    "location": "Springfield Medical, 200 Oak Avenue",
+    "location": "Health System Pharmacy, 550 16th Street",
     "description": "Seeded by Gary seed_gmail.py for the morning briefing demo.",
     # Local America/New_York wall time; seed script converts with the user's timezone.
     "start_hour": 14,

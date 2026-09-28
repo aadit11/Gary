@@ -97,6 +97,16 @@ def resume_goal(site: str, page_name: str, goal: str) -> str:
     )
 
 
+def _task_version(site: str) -> str:
+    """The SDK ships some clones only as v1 tasks (Udriver); prefer v2 when it exists."""
+    try:
+        from agisdk.REAL.browsergym.webclones.task_config import TASKS_BY_VERSION
+
+        return "v2" if f"{site}-1" in TASKS_BY_VERSION.get("v2", []) else "v1"
+    except Exception:  # noqa: BLE001
+        return "v2"
+
+
 def site_url(site: str) -> str:
     return {
         "dashdish": settings.real_dashdish_url,
@@ -119,7 +129,7 @@ class FreeformCloneTask(AbstractWebCloneTask):
             self.slow_mo = 0
             self.timeout = 15000
         else:
-            super().__init__(seed, task_name=f"{site}-1", task_version="v2")
+            super().__init__(seed, task_name=f"{site}-1", task_version=_task_version(site))
         self.site = site
         self.goal = goal
         self.url = (url or site_url(site)).rstrip("/")

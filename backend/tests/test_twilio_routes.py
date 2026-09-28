@@ -42,6 +42,8 @@ def test_prompts_render():
     assert "card number" in inbound and "Social Security" in inbound and "password" in inbound
     assert "Never invent" in inbound
     assert agent_settings.servers_for("reminder") == ["checkins"]
-    assert agent_settings.servers_for("inbound") == ["checkins", "money", "orders"]
+    assert agent_settings.servers_for("inbound") == ["checkins", "money", "orders", "mobility"]
     assert "money" in agent_settings.servers_for("morning_briefing")
-    assert agent_settings.servers_for("appointment") == ["checkins"]
+    assert agent_settings.servers_for("appointment") == ["checkins", "mobility"]  # the call offers a ride
+    appt = agent_settings.load_prompt("appointment", user_name="Margaret", reminder_text="Dr. Patel on Monday at 2 PM at the clinic")
+    assert "Dr. Patel on Monday at 2 PM at the clinic" in appt and "prepare_ride" in appt and "{" not in appt

@@ -90,6 +90,8 @@ Flows:
 │   │   ├── muse.py                  # OpenRouter client (Claude Haiku 4.5, OpenAI-compatible)
 │   │   ├── agent.py                 # observation -> next action (axtree + screenshot prompt)
 │   │   ├── tasks.py                 # FreeformCloneTask: any goal on a REAL clone; per-site flow hints
+│   │   ├── taskhare.py              # reads TaskHare results off the page
+│   │   ├── udriver.py               # reads the Udriver trip page (driver, car, plate, price)
 │   │   └── runner.py                # BrowserJobRunner: one worker thread, submit()/run_now()
 │   ├── scheduler/                   # OWNER: Person 1
 │   │   ├── __init__.py
