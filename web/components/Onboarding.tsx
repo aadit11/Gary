@@ -252,6 +252,9 @@ export default function Onboarding({
                       </div>
                     </>
                   )}
+                  {provider.key === "taskrabbit" && (
+                    <label>Notes for the visit<input value={c.taskrabbit.notes} onChange={(e) => setConnector("taskrabbit", { notes: e.target.value })} placeholder="Ring twice, the dog is friendly" /></label>
+                  )}
                   {provider.key === "gmail" && (
                     <label>Email address<input type="email" value={c.gmail.address} onChange={(e) => setConnector("gmail", { address: e.target.value })} placeholder="margaret@gmail.com" /></label>
                   )}
