@@ -226,3 +226,15 @@ def test_suggest_ride_for_appointment(demo, fake_db):
     out = _out(mobility.suggest_ride_for_appointment(uid))
     assert out["say"].startswith("Your appointment with Dr. Patel is ") and NEW_PLACE in out["say"] and out["say"].endswith("Want me to book you a ride there?")
     assert out["data"]["destination"] == NEW_PLACE
+
+
+def test_ride_progress_lines_are_spoken_once_in_order(demo, monkeypatch):
+    heard = _heard(monkeypatch)
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(mobility.time, "monotonic", lambda: clock["t"])
+    on_progress = mobility._ride_progress(None, demo["user_id"])
+    on_progress("step"); assert heard == []            # right away: nothing yet
+    clock["t"] += 6; on_progress("step"); on_progress("step")
+    assert heard == [mobility.RIDE_PROGRESS[0][1]]     # first line once, not twice
+    clock["t"] += 40; on_progress("step")
+    assert heard == [line for _, line in mobility.RIDE_PROGRESS]  # the rest, in order, each once
