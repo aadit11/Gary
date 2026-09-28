@@ -16,8 +16,9 @@ Food orders are placed on the DashDish clone by Muse (the Meta model) in the bro
 There is no fixed menu. confirm_order never blocks the call: it tells the caregiver the
 request has started, then speaks each new step of Muse's reasoning while the order is placed
 (about half a minute). The final result is spoken into the live call if the user is still
-on the phone. Home service bookings hit the mock API directly and are fast enough to
-confirm synchronously.
+on the phone. Home services work the same way on TaskHare, which has no API: find_home_service
+searches the site in the browser and parks on the results, the taskers are read off the page and
+spoken into the call, and confirm_service_booking continues from that page to book.
 
 NOTE for Person 1: voice/agent_settings.py's SERVERS_BY_REASON does not include "orders" for
 any reason yet (not even "inbound"), so these tools aren't reachable on a live call until
@@ -37,8 +38,9 @@ from mcp.server.fastmcp import FastMCP
 
 from core import activity, approvals, db, notify, pending, policy
 from core.pending import PendingActionError
-from core.speech import date_str, money_str, speak
-from clients import mock_services
+from core.speech import money_str, speak
+from browser_agent.taskhare import parse_taskers, parse_taskers_result, slot_to_iso
+from webhooks.sms import ACTION_EXECUTORS
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +103,14 @@ def _caller_name(user_id: str) -> str:
     except Exception:  # noqa: BLE001
         log.exception("could not read the caller's name")
     return "They"
+
+
+def _caller_timezone(user_id: str) -> str:
+    try:
+        rows = db.get_client().table("users").select("*").eq("id", user_id).limit(1).execute().data
+        return str(rows[0].get("timezone") or "") if rows else ""
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _speak_into_call(call_loop: Optional[asyncio.AbstractEventLoop], user_id: str, message: str, behavior: str = "queue") -> None:
@@ -438,126 +448,214 @@ def confirm_order(user_id: str, action_id: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
-# Home services
+# Home services: TaskHare, through the browser
+#
+# TaskHare has no API. find_home_service starts a search job that types the caller's words into
+# the site, reads the results list off the page, and parks the browser there; the options are
+# spoken into the call when they arrive (about ten seconds). prepare_service_booking runs
+# policy.check() on the chosen tasker's listed price and creates the pending action for the
+# read-back (invariants 1 and 2); confirm_service_booking consumes it and a booking job continues
+# on the parked results page (Choose -> time -> Confirm this visit). A family YES on a held
+# booking runs the same booking job (ACTION_EXECUTORS["book_service"]).
 # ---------------------------------------------------------------------------
+
+# One home-service session per caller: {problem, category, stage, options, chosen, action_id, at}
+# stage: searching | found | none | error | ready | needs_approval | booking | booked
+_services: dict[str, dict] = {}
+
+_PEOPLE = {
+    "plumbing": ("plumber", "plumbers"),
+    "electrical": ("electrician", "electricians"),
+    "handyman": ("handyman", "handymen"),
+    "house cleaning": ("house cleaner", "house cleaners"),
+    "yard work": ("yard helper", "yard helpers"),
+    "furniture assembly": ("furniture assembler", "furniture assemblers"),
+}
+_COUNT_WORDS = {1: "one", 2: "two", 3: "three"}
+_ORDINALS = {"first": 0, "1": 0, "second": 1, "2": 1, "third": 2, "3": 2, "last": -1}
+_CHOICE_FILLER = {"the", "one", "please", "that", "them", "guy", "guys", "company", "co"}
+
+
+def _svc_session(user_id: str) -> dict | None:
+    sess = _services.get(user_id)
+    if sess and time.monotonic() - sess.get("at", 0) > STAGE_TTL_S:
+        _services.pop(user_id, None)
+        return None
+    return sess
+
+
+def _svc_set(user_id: str, **patch) -> dict:
+    sess = _services.setdefault(user_id, {"problem": "", "category": "", "stage": "", "options": [], "chosen": None, "action_id": ""})
+    sess.update(patch)
+    sess["at"] = time.monotonic()
+    return sess
+
+
+def _same_problem(a: str, b: str) -> bool:
+    norm = lambda t: " ".join(re.findall(r"[a-z0-9']+", (t or "").casefold()))  # noqa: E731
+    return bool(a and b) and norm(a) == norm(b)
+
+
+def _people(category: str, count: int) -> str:
+    singular, plural = _PEOPLE.get((category or "").casefold(), ("person", f"people for {category.casefold()}" if category else "people"))
+    return f"one {singular}" if count == 1 else f"{_COUNT_WORDS.get(count, str(count))} {plural}"
+
+
+def _options_say(category: str, options: list[dict]) -> str:
+    parts = [f"{o['name']} for {money_str(o['price'])}, available {o['time']}" for o in options]
+    if len(parts) == 1:
+        return f"I found {_people(category, 1)} on TaskHare: {parts[0]}. Want me to book them?"
+    return f"I found {_people(category, len(parts))} on TaskHare. " + "; ".join(parts[:-1]) + f"; and {parts[-1]}. Who would you like?"
+
+
+def _match_option(options: list[dict], provider: str) -> Optional[dict]:
+    """The option the caller meant: by name ('Rapid Rooter', 'the Bay Plumbing one') or by position ('the first one')."""
+    words = re.findall(r"[a-z0-9']+", (provider or "").casefold())
+    if not words:
+        return options[0] if len(options) == 1 else None
+    if all(w in _ORDINALS or w in _CHOICE_FILLER for w in words):
+        for w in words:
+            if w in _ORDINALS:
+                idx = _ORDINALS[w]
+                return options[idx] if -len(options) <= idx < len(options) else None
+        return None
+    key = " ".join(w for w in words if w not in _CHOICE_FILLER)
+    best: tuple[int, dict] | None = None
+    for option in options:
+        name = option["name"].casefold()
+        if key and (key in name or name in key):
+            return option
+        overlap = len((set(words) - _CHOICE_FILLER) & set(re.findall(r"[a-z0-9']+", name)))
+        if overlap and (best is None or overlap > best[0]):
+            best = (overlap, option)
+    return best[1] if best else None
+
+
+def _begin_service_search(user_id: str, problem: str) -> None:
+    _stop_active_order(user_id)
+    _svc_set(user_id, problem=problem, category="", stage="searching", options=[], chosen=None, action_id="")
+    call_loop = _call_loop()
+    goal = (
+        f"Search TaskHare for help with this job: {problem}. Type those words into the box labeled Describe the job "
+        "and submit the search. When the results list is showing, report the taskers listed with their prices and "
+        "next available times, and stop. Do not choose anyone and do not book anything."
+    )
+
+    def on_done(job) -> None:
+        cur = _svc_session(user_id)
+        if not cur or cur.get("stage") != "searching" or cur.get("problem") != problem:
+            return
+        status = getattr(job, "status", "")
+        if status == "cancelled":
+            return
+        parsed = parse_taskers_result(getattr(job, "result_text", "") or "") if status == "done" else None
+        if parsed is None and getattr(job, "final_text", ""):
+            category, taskers = parse_taskers(job.final_text)  # the list is on the page even if the agent stopped oddly
+            parsed = (category, taskers) if taskers else None
+        if parsed is None:
+            _svc_set(user_id, stage="error")
+            activity.log_event(user_id, "service_search_failed", f"Could not search TaskHare for: {problem}", {"category": "home_service", "outcome": "error"})
+            _speak_into_call(call_loop, user_id, "I couldn't get an answer from TaskHare just now. Want me to try again?", behavior="queue")
+            return
+        category, taskers = parsed
+        options = taskers[:3]
+        if not options:
+            _svc_set(user_id, stage="none", category=category)
+            activity.log_event(user_id, "service_search", f"No one on TaskHare for: {problem}", {"category": "home_service", "outcome": "none"})
+            _speak_into_call(call_loop, user_id, "I couldn't find anyone on TaskHare for that. Want to describe it a different way?", behavior="queue")
+            return
+        _svc_set(user_id, stage="found", category=category, options=options)
+        activity.log_event(user_id, "service_search", f"TaskHare lists {len(options)} for: {problem}", {"category": "home_service", "outcome": "found", "options": options})
+        _speak_into_call(call_loop, user_id, _options_say(category, options), behavior="queue")
+
+    _runner().submit(
+        site="taskhare", goal=goal, user_id=user_id, replay=False, lookup=True, mode="taskers",
+        park=True, park_when="TASKERS", page_name=problem, on_done=on_done,
+        on_progress=_progress_callback(call_loop, user_id, "I'm still looking on TaskHare."),
+    )
+
 
 @orders.tool()
 def find_home_service(user_id: str, problem_description: str) -> str:
-    """Find home service providers, such as a plumber or electrician, for a plainly described problem."""
+    """Call this the moment the caller describes a home problem, such as a leak or a broken light, in their own words. It searches TaskHare in the background and the taskers found are read out in the call when ready."""
+    problem = (problem_description or "").strip()
+    if not problem:
+        return speak("What's going on at home that you'd like help with?", data={"category": "home_service", "outcome": "resolved"})
+    sess = _svc_session(user_id)
+    if sess and _same_problem(sess.get("problem", ""), problem):
+        if sess["stage"] == "searching":
+            return speak("I'm still looking on TaskHare. One moment.", data={"category": "home_service", "outcome": "searching"})
+        if sess["stage"] in ("found", "ready", "needs_approval") and sess.get("options"):
+            return speak(_options_say(sess["category"], sess["options"]), data={"category": "home_service", "outcome": "found", "options": sess["options"]})
     try:
-        result = mock_services.search_services(problem_description)
+        _begin_service_search(user_id, problem)
     except Exception:  # noqa: BLE001
-        log.exception("service search failed")
-        return speak("I couldn't reach the scheduler just now, want me to try again?", data={"category": "home_service", "outcome": "error"})
-
-    category = result.get("category", "")
-    providers = [p for p in (result.get("providers") or []) if p.get("next_slots")]
-    if not providers:
-        return speak(
-            "I couldn't find anyone for that just now. Want to describe it a different way?",
-            data={"category": "home_service", "outcome": "resolved"},
-        )
-
-    top = providers[:3]
-    parts = [f"{p['name']} for {money_str(p['price'])}, available {date_str(p['next_slots'][0])}" for p in top]
-    if len(parts) == 1:
-        say = f"I found {parts[0]}. Want me to book them?"
-    else:
-        say = "I found " + "; ".join(parts[:-1]) + f"; and {parts[-1]}. Who would you like?"
-
-    data = [
-        {"provider_id": p["id"], "category": category, "provider": p["name"], "price": p["price"], "time": p["next_slots"][0]}
-        for p in top
-    ]
-    return speak(say, data={"category": "home_service", "outcome": "resolved", "options": data})
-
-
-def _find_provider(category: str, provider_id: str) -> Optional[dict]:
-    result = mock_services.search_services(category)
-    return next((p for p in (result.get("providers") or []) if p["id"] == provider_id), None)
+        log.exception("home service search failed to start")
+        return speak("I couldn't reach TaskHare just now. Want me to try again?", data={"category": "home_service", "outcome": "error"})
+    return speak(
+        "Let me look on TaskHare for someone who can help with that. Give me a moment.",
+        data={"category": "home_service", "outcome": "searching", "problem": problem},
+    )
 
 
 @orders.tool()
-def prepare_service_booking(user_id: str, provider_id: str, category: str, time: Optional[str] = None) -> str:
-    """Prepare to book a home service provider and return the details to read back."""
-    try:
-        provider = _find_provider(category, provider_id)
-    except Exception:  # noqa: BLE001
-        log.exception("provider lookup failed")
-        return speak("I couldn't check on that provider just now, want me to try again?", data={"category": "home_service", "outcome": "error"})
+def prepare_service_booking(user_id: str, provider: str = "") -> str:
+    """After find_home_service has read out the taskers, prepare to book the one the caller chose, by name or position, and return the read-back."""
+    sess = _svc_session(user_id)
+    if not sess or sess.get("stage") in ("", "none", "error"):
+        return speak("Tell me what's going on at home and I'll look for someone on TaskHare.", data={"category": "home_service", "outcome": "error"})
+    stage = sess["stage"]
+    if stage == "searching":
+        return speak("I'm still looking on TaskHare. One moment.", data={"category": "home_service", "outcome": "searching"})
+    if stage == "booking":
+        return speak(f"I'm already booking {sess['chosen']['name']}. I'll tell you how it goes.", data={"category": "home_service", "outcome": "booking"})
+    if stage == "booked":
+        return speak(f"{sess['chosen']['name']} is already booked for {sess['chosen']['time']}.", data={"category": "home_service", "outcome": "booked"})
 
-    if not provider:
-        return speak(
-            "I couldn't find that provider anymore. Want me to look again?",
-            data={"category": "home_service", "outcome": "error"},
-        )
+    options = sess.get("options") or []
+    chosen = _match_option(options, provider)
+    if not chosen:
+        names = [o["name"] for o in options]
+        ask = f"Should I book {names[0]}?" if len(names) == 1 else "Which one would you like: " + ", ".join(names[:-1]) + f", or {names[-1]}?"
+        return speak(ask, data={"category": "home_service", "outcome": "resolved", "options": options})
+    if stage == "ready" and sess.get("action_id") and sess.get("chosen") == chosen:
+        return speak(f"{chosen['name']} can come {chosen['time']} for {money_str(chosen['price'])}. Should I book them?",
+                     action_id=sess["action_id"], data={"category": "home_service", "outcome": "ready"})
 
-    slots = provider.get("next_slots") or []
-    chosen_time = time if time in slots else (slots[0] if slots else None)
-    if not chosen_time:
-        return speak(
-            f"{provider['name']} doesn't have any open times right now. Want me to find someone else?",
-            data={"category": "home_service", "outcome": "error"},
-        )
-
-    decision = policy.check(kind="service", payee=provider["name"], amount=provider["price"], user_id=user_id)
+    payload = {"provider": chosen["name"], "price": chosen["price"], "time": chosen["time"],
+               "category": sess.get("category", ""), "problem": sess.get("problem", "")}
+    decision = policy.check(kind="service", payee=chosen["name"], amount=chosen["price"], user_id=user_id)
     if decision.needs_approval:
-        approvals.request(
-            user_id=user_id,
-            action="book_service",
-            payload={"provider_id": provider_id, "category": category, "provider": provider["name"],
-                      "price": provider["price"], "time": chosen_time},
-            reason=decision.reason,
-            summary=f"{provider['name']}, {money_str(provider['price'])}, {date_str(chosen_time)}",
-        )
+        approvals.request(user_id=user_id, action="book_service", payload=payload, reason=decision.reason,
+                          summary=f"{chosen['name']}, {money_str(chosen['price'])}, {chosen['time']}")
+        _svc_set(user_id, stage="needs_approval", chosen=chosen, action_id="")
         return speak(
             f"I'd like to check with {decision.family_name} before booking that one.",
             data={"category": "home_service", "outcome": "needs_approval"},
         )
-
-    action_id = pending.create(
-        "book_service",
-        user_id,
-        provider_id=provider_id,
-        category=category,
-        provider=provider["name"],
-        price=provider["price"],
-        time=chosen_time,
-    )
+    action_id = pending.create("book_service", user_id, **payload)
+    _svc_set(user_id, stage="ready", chosen=chosen, action_id=action_id)
     return speak(
-        f"{provider['name']} can come {date_str(chosen_time)} for about {money_str(provider['price'])}. Should I book them?",
+        f"{chosen['name']} can come {chosen['time']} for {money_str(chosen['price'])}. Should I book them?",
         action_id=action_id,
-        data={"category": "home_service"},
+        data={"category": "home_service", "outcome": "ready"},
     )
 
 
-@orders.tool()
-def confirm_service_booking(user_id: str, action_id: str) -> str:
-    """Book a previously prepared home service appointment on TaskHare after the user says yes."""
-    try:
-        payload = pending.consume(action_id, "book_service", user_id)
-    except PendingActionError as err:
-        return speak(err.say, data={"category": "home_service", "outcome": "error"})
-
-    provider_name = payload["provider"]
-    when = date_str(payload["time"])
-    goal = (
-        f"On TaskHare, hire {provider_name} for {payload['category']} help. "
-        f"The visit should be {when}. "
-        "Search or open that tasker, choose that time, and click Confirm this visit. "
-        "Stop when the page says you're booked. Do not invent a tasker or a time."
-    )
-    call_loop = _call_loop()
+def _start_booking(user_id: str, payload: dict, call_loop: Optional[asyncio.AbstractEventLoop]) -> None:
+    """Book on TaskHare in the browser, continuing on the parked results page when there is one."""
+    provider_name = str(payload.get("provider") or "the tasker")
+    when = str(payload.get("time") or "the next available time")
+    price = float(payload.get("price") or 0)
+    category = str(payload.get("category") or "home")
+    _svc_set(user_id, stage="booking", chosen={"name": provider_name, "price": price, "time": when}, action_id="")
     caller = _caller_name(user_id)
-    notify.notify_family(
-        user_id,
-        f"{caller} asked to book {provider_name} for {when}. The request to book has been started.",
-    )
-    activity.log_event(
-        user_id,
-        "service_requested",
-        f"Started a booking for {provider_name}.",
-        {"category": "home_service", "outcome": "booking"},
+    notify.notify_family(user_id, f"{caller} asked to book {provider_name} for {when}. The request to book has been started.")
+    activity.log_event(user_id, "service_requested", f"Started a booking for {provider_name}.", {"category": "home_service", "outcome": "booking"})
+    goal = (
+        f"On TaskHare, hire {provider_name} for {category} help. The visit should be {when}. "
+        f"Click the link Choose {provider_name}, click the time {when}, then click Confirm this visit. "
+        "Stop when the page heading says You're booked. Do not invent a tasker or a time."
     )
 
     def on_done(job) -> None:
@@ -568,15 +666,16 @@ def confirm_service_booking(user_id: str, action_id: str) -> str:
             try:
                 db.get_client().table("service_bookings").insert({
                     "user_id": user_id,
-                    "category": payload["category"],
+                    "category": category,
                     "provider": provider_name,
-                    "scheduled_at": payload["time"],
-                    "price": payload["price"],
+                    "scheduled_at": slot_to_iso(when, tz=_caller_timezone(user_id)),
+                    "price": price,
                     "status": "booked",
                     "external_id": getattr(job, "id", "") or "taskhare",
                 }).execute()
             except Exception:  # noqa: BLE001
                 log.exception("failed to record service booking for %s", user_id)
+        _svc_set(user_id, stage="booked" if success else "error")
         activity.log_event(
             user_id,
             "service_booking",
@@ -585,27 +684,40 @@ def confirm_service_booking(user_id: str, action_id: str) -> str:
         )
         notify.notify_family(
             user_id,
-            f"{provider_name} is booked for {when} at the home."
-            if success else
-            f"Sorry, the booking with {provider_name} didn't go through.",
+            f"{provider_name} is booked for {when} at the home." if success else f"Sorry, the booking with {provider_name} didn't go through.",
         )
         message = (
-            f"You're booked. {provider_name} will come {when}."
-            if success else
-            f"I had trouble booking {provider_name}. Want me to try again?"
+            f"You're booked. {provider_name} will come {when}." if success else f"I had trouble booking {provider_name}. Want me to try again?"
         )
         _speak_into_call(call_loop, user_id, message, behavior="queue")
 
-    app_module = importlib.import_module("main")
-    app_module.app.state.browser_runner.submit(
-        site="taskhare",
-        goal=goal,
-        user_id=user_id,
-        replay=False,
-        on_done=on_done,
-        on_progress=_progress_callback(call_loop, user_id, f"I'm still booking {provider_name}."),
+    _runner().submit(
+        site="taskhare", goal=goal, user_id=user_id, replay=False, page_name=str(payload.get("problem") or provider_name),
+        on_done=on_done, on_progress=_progress_callback(call_loop, user_id, f"I'm still booking {provider_name}."),
     )
+
+
+@orders.tool()
+def confirm_service_booking(user_id: str, action_id: str = "") -> str:
+    """Book the tasker that was read back, after the caller clearly says yes. The action id may be left blank."""
+    sess = _svc_session(user_id)
+    action_id = (action_id or "").strip() or (sess.get("action_id", "") if sess else "")
+    try:
+        payload = pending.consume(action_id, "book_service", user_id)
+    except PendingActionError as err:
+        return speak(err.say, data={"category": "home_service", "outcome": "error"})
+    _start_booking(user_id, payload, _call_loop())
     return speak(
-        f"I'm booking {provider_name} on TaskHare for {when}. I'll tell you how it's going.",
+        f"I'm booking {payload['provider']} on TaskHare for {payload.get('time') or 'the next available time'}. I'll tell you how it's going.",
         data={"category": "home_service", "outcome": "booking"},
     )
+
+
+def _execute_book_service(approval) -> str:
+    """Family replied YES to a held booking: book it the same way a spoken yes would."""
+    payload = dict(approval.payload or {})
+    _start_booking(approval.user_id, payload, _call_loop())
+    return f"Approved. Booking {payload.get('provider', 'the tasker')} for {payload.get('time', 'the next time')} now; we'll text you when it's done."
+
+
+ACTION_EXECUTORS["book_service"] = _execute_book_service

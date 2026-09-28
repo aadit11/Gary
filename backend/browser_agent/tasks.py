@@ -39,6 +39,18 @@ SITE_HINTS = {
     ),
 }
 
+TASKHARE_SEARCH_HINT = (
+    "How to search TaskHare: type the job in the box labeled Describe the job and press Enter or click Search, "
+    "or click a job type such as Plumbing. The results list each tasker with a price and their next available time. "
+    "This is a search only: do not click Choose, do not pick a time, and do not confirm anything."
+)
+
+TASKHARE_STAY_HINT = (
+    "You are already on the TaskHare results list for this job. Do not search again. "
+    "Click the link Choose and the tasker's name, click the time that matches the visit, then click Confirm this visit. "
+    "The hire is complete only when the page heading says You're booked. Do not invent a tasker or a time."
+)
+
 
 LOOKUP_HINT = (
     "How to look a restaurant up on DashDish: use the search box at the top, open the restaurant by its "
@@ -55,14 +67,34 @@ STAY_HINT = (
 )
 
 
+LOOKUP_HINTS = {"dashdish": LOOKUP_HINT, "taskhare": TASKHARE_SEARCH_HINT}
+STAY_HINTS = {"dashdish": STAY_HINT, "taskhare": TASKHARE_STAY_HINT}
+
+
 def goal_with_hints(site: str, goal: str, lookup: bool = False, stay: bool = False) -> str:
     if lookup:
-        hint = LOOKUP_HINT
+        hint = LOOKUP_HINTS.get(site, SITE_HINTS.get(site, ""))
     elif stay:
-        hint = STAY_HINT
+        hint = STAY_HINTS.get(site, SITE_HINTS.get(site, ""))
     else:
         hint = SITE_HINTS.get(site, "")
     return goal + "\n\n" + hint if hint else goal
+
+
+def resume_goal(site: str, page_name: str, goal: str) -> str:
+    """The goal for a job that continues on a page an earlier lookup parked."""
+    if site == "taskhare":
+        name = page_name or "this job"
+        return (
+            f"You are already on the TaskHare results for {name}. Stay on this page and do not search again. "
+            f"The request was: {goal}"
+        )
+    name = page_name or "the restaurant"
+    return (
+        f"You are already on the {name} page. Stay on this page. "
+        "Do not go back to the home page and do not search for the restaurant again. "
+        f"Find the dish on this menu and place the delivery order. The request was: {goal}"
+    )
 
 
 def site_url(site: str) -> str:

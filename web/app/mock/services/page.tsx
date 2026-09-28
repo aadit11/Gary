@@ -1,10 +1,13 @@
+import Link from "next/link";
 import providers from "@/lib/mock-data/providers.json";
 
 export default function MockServices() {
   return (
     <>
-      <h1>Mock home services</h1>
-      <p className="muted">GET /api/mock/services/search?category=plumber, POST /api/mock/services/bookings</p>
+      <h1>Home services</h1>
+      <p className="muted">
+        These taskers are listed on <Link href="/taskhare">TaskHare</Link>. Gary searches and books there in a browser, the same way a person would. There is no API.
+      </p>
       <div className="cards">
         {providers.map((p) => (
           <div className="card" key={p.id}>

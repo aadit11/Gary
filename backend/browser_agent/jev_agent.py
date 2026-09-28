@@ -116,6 +116,8 @@ class JevAgent(MuseSparkAgent):
         }
         if self.mode == "lookup":
             ops.update(LOOKUP_OPS)
+        elif self.mode == "taskers":
+            ops["DONE_TASKERS"] = "The search results for the job are showing: a list of taskers, each with a price and a next available time, or a message that there are none for that job."
         elif self.mode == "stage":
             ops["DONE_STAGED"] = "The checkout page is showing with the chosen item in the cart (Place Order is visible but NOT clicked)."
         elif self.mode == "place":
@@ -128,7 +130,8 @@ class JevAgent(MuseSparkAgent):
         questions: dict[str, Any] = {"operation": {"type": "choice", "criteria": ops, "instructions": instructions}}
         clickable = {e["bid"]: {"element": f"[{e['bid']}] {e['role']} {e['name']}", "role": e["role"], **({"value": e["value"]} if e["value"] else {})}
                      for e in elements if (e["role"] not in TEXT_ROLES or e["role"] == "combobox")
-                     and not (self.mode == "stage" and re.match(r"place order", e["name"], re.I))}
+                     and not (self.mode == "stage" and re.match(r"place order", e["name"], re.I))
+                     and not (self.mode == "taskers" and re.match(r"choose\b|confirm", e["name"], re.I))}
         typeable = {e["bid"]: {"element": f"[{e['bid']}] {e['role']} {e['name']}", "role": e["role"], "current_value": e["value"]}
                     for e in elements if e["role"] in TEXT_ROLES}
         if len(clickable) >= 2:
@@ -234,6 +237,12 @@ class JevAgent(MuseSparkAgent):
             return "noop(800)"
         if op in LOOKUP_DONE_TEXT:
             return f'send_msg_to_user({json.dumps(LOOKUP_DONE_TEXT[op].format(name=self.restaurant))})'
+        if op == "DONE_TASKERS":
+            from browser_agent.agent import full_text
+            from browser_agent.taskhare import parse_taskers, taskers_result_text
+
+            category, taskers = parse_taskers(full_text(obs))
+            return f'send_msg_to_user({json.dumps(taskers_result_text(category, taskers))})'
         if op == "DONE_STAGED":
             if self.staged_item:
                 price = f"${self.staged_price:.2f}" if self.staged_price else "$0.00"
