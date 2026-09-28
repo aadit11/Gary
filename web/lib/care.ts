@@ -228,6 +228,8 @@ export function callOutcome(group: CallGroup): string {
   // A booking that went through (even after the hangup) says more than the state at hangup did.
   const booked = [...group.events].reverse().find((e) => BOOKED_LINE[e.kind] && e.data?.outcome !== "error");
   if (booked) return BOOKED_LINE[booked.kind];
+  if (group.events.some((e) => e.kind === "approval_denied")) return "Held for you, and you said no.";
+  if (group.events.some((e) => e.kind === "approval_approved")) return "Held for you, and you said yes.";
   if (!group.ended) return "In progress";
   const outcome = group.ended.data?.outcome;
   return (typeof outcome === "string" && OUTCOME_LABEL[outcome]) || "The call finished.";
