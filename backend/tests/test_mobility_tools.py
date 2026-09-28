@@ -135,6 +135,7 @@ def test_prepare_ride_to_new_place_asks_family(demo, profile, fake_db):
     assert out["data"]["outcome"] == "needs_approval" and "David" in out["say"] and not out.get("action_id")
     rows = fake_db.table("approvals").select("*").eq("user_id", demo["user_id"]).execute().data
     assert rows[-1]["action"] == "book_ride" and rows[-1]["payload"]["destination"] == NEW_PLACE and rows[-1]["payload"]["pickup"] == HOME
+    assert "looking for a driver" in rows[-1]["payload"]["done_say"] and "booked" not in rows[-1]["payload"]["done_say"]
 
 
 def test_prepare_ride_without_destination_asks(demo, profile):
@@ -226,3 +227,30 @@ def test_suggest_ride_for_appointment(demo, fake_db):
     out = _out(mobility.suggest_ride_for_appointment(uid))
     assert out["say"].startswith("Your appointment with Dr. Patel is ") and NEW_PLACE in out["say"] and out["say"].endswith("Want me to book you a ride there?")
     assert out["data"]["destination"] == NEW_PLACE
+
+
+def test_ride_progress_lines_are_spoken_once_in_order(demo, monkeypatch):
+    heard = _heard(monkeypatch)
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(mobility.time, "monotonic", lambda: clock["t"])
+    on_progress = mobility._ride_progress(None, demo["user_id"])
+    on_progress("step"); assert heard == []            # right away: nothing yet
+    clock["t"] += 6; on_progress("step"); on_progress("step")
+    assert heard == [mobility.RIDE_PROGRESS[0][1]]     # first line once, not twice
+    clock["t"] += 60; on_progress("step")
+    assert heard == [line for _, line in mobility.RIDE_PROGRESS]  # the rest, in order, each once
+
+
+def test_family_yes_sentence_does_not_claim_a_booking(demo, profile, fake_runner, monkeypatch):
+    from voice.injection import approval_sentence
+    from core import approvals
+
+    mobility.prepare_ride(demo["user_id"], NEW_PLACE)
+    aid = approvals.latest_pending_for_phone(demo["family_phone"]).id
+    handle_reply(demo["family_phone"], "YES")
+    resolved = approvals.get(aid)
+    resolved.outcome = "executed"
+    line = approval_sentence(resolved)
+    assert line.startswith("Good news, your son David said yes.") and "looking for a driver" in line
+    assert "booked" not in line.lower() and "on the way" not in line.lower()
+    assert all("booked" not in text.lower() for _, text in mobility.RIDE_PROGRESS)

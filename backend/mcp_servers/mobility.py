@@ -15,6 +15,7 @@ other verticals (prepare -> confirm), with the family loop built in:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -25,7 +26,7 @@ from browser_agent.udriver import parse_trip, spoken_plate, trip_booked
 from core import activity, approvals, db, notify, pending, policy
 from core.pending import PendingActionError
 from core.speech import date_str, money_str, speak
-from mcp_servers.orders import _call_loop, _caller_name, _progress_callback, _runner, _speak_into_call
+from mcp_servers.orders import _call_loop, _caller_name, _runner, _speak_into_call
 from webhooks.sms import ACTION_EXECUTORS
 
 log = logging.getLogger(__name__)
@@ -85,6 +86,37 @@ def _search_term(place: str) -> str:
     return (place or "").split(",")[0].strip() or place
 
 
+# What the caller hears while the browser books the ride: (seconds since the job started, line).
+RIDE_PROGRESS = [
+    (3, "I'm looking for drivers right now. We should have one in a few minutes."),
+    (18, "Still looking for a driver. Just a moment more."),
+    (34, "Almost there, thanks for your patience."),
+    (52, "Still searching. I'll tell you the moment a driver is set."),
+]
+
+# Spoken into the call the moment the family says yes (voice/injection.py reads payload.done_say).
+FAMILY_YES_SAY = "I'm looking for a driver right now. We should have one in a few minutes."
+
+
+def _ride_progress(call_loop, user_id: str):
+    """Speak each RIDE_PROGRESS line once, in order, as the booking passes that many seconds."""
+    started = time.monotonic()
+    spoken = {"n": 0}
+
+    def on_progress(_reason: str) -> None:
+        from voice.bridge import ACTIVE_SESSIONS
+
+        session = ACTIVE_SESSIONS.get(user_id)
+        if session is not None and getattr(session, "order_updates_paused", False):
+            return
+        elapsed = time.monotonic() - started
+        while spoken["n"] < len(RIDE_PROGRESS) and elapsed >= RIDE_PROGRESS[spoken["n"]][0]:
+            _speak_into_call(call_loop, user_id, RIDE_PROGRESS[spoken["n"]][1], behavior="queue")
+            spoken["n"] += 1
+
+    return on_progress
+
+
 def _title_phrase(title: str) -> str:
     title = (title or "an appointment").strip()
     return f"appointment with {title}" if title.lower().startswith("dr") else title
@@ -116,7 +148,7 @@ def prepare_ride(user_id: str, destination: str, pickup: str = "") -> str:
         return speak("Where would you like to go?", data={"category": "ride", "outcome": "resolved"})
     pickup = (pickup or "").strip() or _home(user_id)
     decision = policy.check(kind="ride", payee=destination, amount=0, user_id=user_id)
-    payload = {"pickup": pickup, "destination": destination, "summary": f"book a ride from home to {destination}"}
+    payload = {"pickup": pickup, "destination": destination, "summary": f"book a ride from home to {destination}", "done_say": FAMILY_YES_SAY}
     if decision.needs_approval:
         approvals.request(user_id=user_id, action="book_ride", payload=payload, reason=decision.reason,
                           summary=f"a ride from home to {destination}")
@@ -193,7 +225,7 @@ def _start_ride(user_id: str, payload: dict, call_loop) -> None:
 
     _runner().submit(
         site="udriver", goal=goal, user_id=user_id, replay=False, page_name=destination, on_done=on_done,
-        on_progress=_progress_callback(call_loop, user_id, "I'm still lining up your ride."),
+        on_progress=_ride_progress(call_loop, user_id),
     )
 
 
