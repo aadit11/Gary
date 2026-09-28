@@ -17,7 +17,7 @@ Features:
 - **Daily Reminders**: family-scheduled outbound calls (e.g. medication), with confirmation, retries, and family alerts. The morning call includes a briefing.
 - **Booking Transportation**: ride booking with read-back, driver details, family trip alerts, rides suggested for calendar appointments.
 
-This is a hackathon build. The biller and home-services providers are **mocks** served by `web/`. Food ordering and rides run on **REAL's web clones** (DashDish for DoorDash, Udriver for Uber) operated by a browser agent in `backend/browser_agent/` (Muse Spark on the Meta Model API deciding each step). Never integrate real payment, banking, DoorDash, or Uber APIs.
+This is a hackathon build. The biller is a **mock API** and home services run on **TaskHare**, a mock website, both served by `web/`. Food ordering and rides run on **REAL's web clones** (DashDish for DoorDash, Udriver for Uber). TaskHare and the clones have no API: a browser agent in `backend/browser_agent/` searches and books on them the way a person would. Never integrate real payment, banking, DoorDash, or Uber APIs.
 
 ## Architecture
 
@@ -120,9 +120,9 @@ Flows:
     │   ├── mock/
     │   │   ├── biller/page.tsx
     │   │   └── services/page.tsx
+    │   ├── taskhare/                # TaskHare: mock home-services site, driven by the browser agent
     │   └── api/mock/
-    │       ├── biller/{bills,pay}/route.ts
-    │       └── services/{search,bookings}/route.ts
+    │       └── biller/{bills,pay}/route.ts
     └── lib/
         ├── supabase.ts
         └── mock-data/               # static JSON: bills, providers
@@ -245,12 +245,12 @@ Mocks are simple and mostly stateless; the backend database is the source of tru
 |---|---|
 | Biller | `GET /api/mock/biller/bills`, `POST /api/mock/biller/pay` → `{confirmation_id}` |
 | Food | **REAL DashDish clone** via `browser_agent` (no API; see below) |
-| Services | `GET /api/mock/services/search?category=` (or `?q=my sink is leaking`), `POST /api/mock/services/bookings` → `{booking_id, provider, time}` |
+| Services | **TaskHare** mock site (`/taskhare`) via `browser_agent` (no API; see below) |
 | Rides | **REAL Udriver clone** via `browser_agent` (no API; see below) |
 
-## Browser agent (food and rides)
+## Browser agent (food, rides, and home services)
 
-REAL's clones have no API, so orders and rides are placed by a browser agent: `BrowserJobRunner.submit(site, goal, user_id, on_done)` runs Muse Spark against the clone on a background thread and calls back with a `BrowserJob` (status, result_text like "DONE: Ordered ..., total $21.77", steps, seconds). A DashDish order takes about 50 to 80 seconds, so tools must never wait on it: `confirm_*` says "I'm placing that now" and the callback texts the family and injects the result into the live call. Measure with `uv run python scripts/run_browser_task.py dashdish "..."`.
+REAL's clones and TaskHare have no API, so orders, rides, and home-service bookings are placed by a browser agent: `BrowserJobRunner.submit(site, goal, user_id, on_done)` runs Muse Spark against the clone on a background thread and calls back with a `BrowserJob` (status, result_text like "DONE: Ordered ..., total $21.77", steps, seconds). A DashDish order takes about 50 to 80 seconds, so tools must never wait on it: `confirm_*` says "I'm placing that now" and the callback texts the family and injects the result into the live call. Searches work the same way: `find_home_service` starts a `taskers` search job on TaskHare that reads the results off the page and parks the browser there, and the options are spoken into the call when they arrive. Measure with `uv run python scripts/run_browser_task.py dashdish "..."` or `... taskhare --lookup --mode taskers "Search TaskHare for help with this job: my sink is leaking"`.
 
 ## Environment variables (`.env.example`)
 

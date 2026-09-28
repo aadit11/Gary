@@ -1,7 +1,8 @@
 """Run one browser-agent task and print steps and wall-clock time.
 
   uv run python scripts/run_browser_task.py dashdish "Order one Classic Cheeseburger from Souvla for delivery and place the order"
-  flags: --headed  --no-screenshot  --max-steps N
+  uv run python scripts/run_browser_task.py taskhare --lookup --mode taskers "Search TaskHare for help with this job: my sink is leaking"
+  flags: --headed  --no-screenshot  --max-steps N  --lookup  --mode lookup|taskers|stage|place
 """
 
 import argparse
@@ -27,11 +28,13 @@ def main() -> None:
     ap.add_argument("--max-steps", type=int, default=None)
     ap.add_argument("--flow-key", default=None, help="learn/replay a named flow, e.g. usual-soup")
     ap.add_argument("--no-replay", action="store_true", help="ignore any learned flow (but still save one)")
+    ap.add_argument("--lookup", action="store_true", help="a search/lookup job: read the page, change nothing")
+    ap.add_argument("--mode", default="", help="how the job should finish: lookup | taskers | stage | place")
     args = ap.parse_args()
 
     job = BrowserJobRunner().run_now(
         args.site, args.goal, headless=not args.headed, use_screenshot=not args.no_screenshot, max_steps=args.max_steps,
-        flow_key=args.flow_key, replay=not args.no_replay,
+        flow_key=args.flow_key, replay=not args.no_replay, lookup=args.lookup, mode=args.mode,
     )
     print("\n=== RESULT ===")
     print("status:   ", job.status)

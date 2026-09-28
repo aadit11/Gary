@@ -59,6 +59,7 @@ Things another person needs to know to build on your work: signature changes, ne
 
 One line per merged PR, newest first. Keep it to what changed, not how.
 
+- 2026-09-27: Home services run through the browser on TaskHare (search, read-back, booking); no services API. Family YES on a held booking now books it. Branch `taskhare-browser-search`.
 - 2026-09-27: Jev decider (`jev-pipeline`) can drive DashDish, Udriver, and TaskHare. `BROWSER_DECIDER=llm` remains the default until `JEV_API_KEY` is set.
 - 2026-09-27: Staged food ordering (lookup on mention -> cart+checkout on dish -> one-click place), one persistent browser across jobs, Jev decider (`browser_agent/jev_agent.py`) benchmarked and made the default, think model gpt-4.1, console harness `scripts/chat_gary.py`. Branch `jev-pipeline`.
 - 2026-09-26: Caregiver desk and profile (settings, diet, saved places, regular-bill reminders), weekly call days, and Cole (`flux-cole-en`). Bill reminders text the caregiver only. Open as PR #4.
@@ -87,6 +88,14 @@ One line per merged PR, newest first. Keep it to what changed, not how.
 Jev decides in ~0.4 s, so per-step cost is browser time, not model time; it takes one action per decision (no plans) and never scrolled or looped. Haiku plans several actions per call but each call is 2 to 5 s. Both picked Buffalo Spicy Wings for "8 piece". Jev numbers predate the 1.5 s post-click re-observe added for verification (add ~1.5 s per job). Recommendation: `BROWSER_DECIDER=jev` for the demo, Haiku as fallback if the Jev API is down (the agent falls back to noop then infeasible on request errors).
 
 Console replay of the demo conversation with Jev (Panera missing -> Wingstop open -> "8 pc wing" placed): 15.6 s + 15.1 s + 16.3 s, order id spoken back. The runner now keeps **one browser open across jobs** (soft reset: clone `/config` + `/finish` + home, no Chromium relaunch), so no more window churn. Jev is not offered INFEASIBLE until it has taken 3 actions, and the order goal says to pick the closest listed item. `voice/prompts/base.md` tells the voice model never to announce a check's outcome before a tool or message provides it.
+
+## Home services on TaskHare, through the browser (branch `taskhare-browser-search`, 2026-09-27)
+
+TaskHare has no API, and the backend no longer calls one (`web/app/api/mock/services/*` is gone). Same shape as food (`mcp_servers/orders.py`):
+1. **Problem described** -> `find_home_service` starts a `taskers` search job (`lookup=True, mode="taskers"`): the agent types the caller's words into the site, and the results list is read off the accessibility tree (`browser_agent/taskhare.py`; under Jev no model call is needed for the summary). The browser parks on the results (`park_when="TASKERS"`) and the top three are spoken into the call: "I found three plumbers on TaskHare. Bay Plumbing Co. for $120.00, available Monday, September 28 at 10 AM; ... Who would you like?" Measured 7.9 s, 2 steps, 3 Jev calls.
+2. **Tasker chosen** -> `prepare_service_booking(user_id, provider)` takes the name or position the caller said ("Rapid Rooter", "the first one"), runs `policy.check(kind="service")` on the listed price, creates the pending action, and reads back the next available time. There is no provider id or category parameter anymore.
+3. **Yes** -> `confirm_service_booking` (action id may be blank) consumes it and a booking job resumes on the parked results page: Choose -> time -> Confirm this visit. Result spoken back; `service_bookings` row written with `scheduled_at` parsed from the slot label.
+A family YES on a held booking runs the same booking job (`ACTION_EXECUTORS["book_service"]`, registered by `orders.py`). Per-site lookup, stay, and resume text live in `browser_agent/tasks.py` (`LOOKUP_HINTS`, `STAY_HINTS`, `resume_goal`); the LLM decider gets `TASKERS_SYSTEM` from `agent.py` and Jev gets a `DONE_TASKERS` operation. One home-service session per caller (`_services`), 10-minute TTL. Only the next available slot per tasker is offered; picking another time is not supported yet. `clients/mock_services.py` still has the unused `search_services` / `create_service_booking` helpers.
 
 ## Staged food ordering (branch `jev-pipeline`, 2026-09-27)
 

@@ -59,7 +59,7 @@ class BrowserJob:
     page_name: str = ""
     park_when: str = ""  # only park if the result text contains this (e.g. "OPEN")
     decider: str = ""    # "" = settings.browser_decider | llm | jev
-    mode: str = ""       # lookup | stage | place | order (how the job should finish)
+    mode: str = ""       # lookup | taskers | stage | place | order (how the job should finish)
 
     @property
     def ok(self) -> bool:
@@ -84,7 +84,7 @@ def _default_env_factory(site: str, goal: str, headless: bool, lookup: bool = Fa
 
 def _default_agent_factory(goal: str, use_screenshot: bool, site: str = "dashdish", lookup: bool = False, stay: bool = False,
                            decider: str = "", page_name: str = "", mode: str = "") -> Any:
-    from browser_agent.agent import LOOKUP_EXAMPLES, LOOKUP_SYSTEM, MuseSparkAgent
+    from browser_agent.agent import LOOKUP_PROMPTS, MuseSparkAgent
     from browser_agent.tasks import goal_with_hints
 
     hinted = goal_with_hints(site, goal, lookup=lookup, stay=stay)
@@ -93,7 +93,8 @@ def _default_agent_factory(goal: str, use_screenshot: bool, site: str = "dashdis
 
         return JevAgent(hinted, lookup=lookup, restaurant=page_name, mode=mode or ("lookup" if lookup else "order"))
     if lookup:
-        return MuseSparkAgent(hinted, use_screenshot=use_screenshot, system_text=LOOKUP_SYSTEM, examples=LOOKUP_EXAMPLES)
+        system_text, examples = LOOKUP_PROMPTS.get(mode) or LOOKUP_PROMPTS["lookup"]
+        return MuseSparkAgent(hinted, use_screenshot=use_screenshot, system_text=system_text, examples=examples)
     return MuseSparkAgent(hinted, use_screenshot=use_screenshot)
 
 
@@ -333,15 +334,12 @@ class BrowserJobRunner:
                     except Exception:  # noqa: BLE001
                         log.exception("re-observe on resume failed; using the parked observation")
                         obs = parked.obs
+                from browser_agent.tasks import resume_goal
+
                 job.stay = True
                 job.replay = False
-                name = parked.page_name or "the restaurant"
-                job.goal = (
-                    f"You are already on the {name} page. Stay on this page. "
-                    "Do not go back to the home page and do not search for the restaurant again. "
-                    f"Find the dish on this menu and place the delivery order. The request was: {job.goal}"
-                )
-                log.info("job %s resuming on the parked %s page", job.id, name)
+                job.goal = resume_goal(job.site, parked.page_name, job.goal)
+                log.info("job %s resuming on the parked %s page", job.id, parked.page_name or job.site)
             elif self._env is not None and hasattr(self._env, "context"):
                 env = self._env
                 try:

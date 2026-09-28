@@ -66,20 +66,12 @@ def fake_runner(monkeypatch):
 # --- fakes for clients/mock_services.py -------------------------------------
 
 FOOD_ITEM = {"id": "f2", "name": "Tomato Basil Soup", "vendor": "Souvla", "price": 8.50}
-PROVIDER = {"id": "p1", "name": "Ace Plumbing", "category": "plumber", "price": 89.0,
-            "next_slots": ["2026-09-28T10:00:00"]}
 
 
 @pytest.fixture(autouse=True)
 def patch_mock_services(monkeypatch):
     monkeypatch.setattr("clients.mock_services.search_food_catalog", lambda q: [FOOD_ITEM])
     monkeypatch.setattr("clients.mock_services.get_food_item", lambda item_id: FOOD_ITEM if item_id == "f2" else None)
-    monkeypatch.setattr("clients.mock_services.search_services", lambda q: {"category": "plumber", "providers": [PROVIDER]})
-    monkeypatch.setattr(
-        "clients.mock_services.create_service_booking",
-        lambda provider_id, time, problem="": {"booking_id": "BK-123", "provider": "Ace Plumbing",
-                                                 "category": "plumber", "time": time, "price": 89.0},
-    )
 
 
 def _say(json_str: str) -> str:
@@ -220,38 +212,148 @@ def test_prepare_order_with_favorite_starts_lookup(demo, fake_runner):
     assert fake_runner.submitted[-1]["mode"] == "lookup"
 
 
-def test_find_home_service_returns_options(demo):
-    result = orders.find_home_service(demo["user_id"], "my sink is leaking")
-    say = _say(result)
-    assert "Ace Plumbing" in say and "89.00" in say
+# --- home services: TaskHare, through the browser ----------------------------
+
+TASKERS_DONE = "DONE: TASKERS [Plumbing]: Bay Plumbing Co. | $120 | Monday, September 28 at 10 AM || Rapid Rooter | $95 | Monday, September 28 at 4 PM"
+RESULTS_PAGE = """[42] heading 'Plumbing'
+[43] list ''
+\t[44] listitem ''
+\t\t[45] heading 'Bay Plumbing Co.'
+\t\t[46] paragraph ''
+\t\t\tStaticText '4.8'
+\t\t\tStaticText 'stars · $'
+\t\t\tStaticText '120'
+\t\t\tStaticText 'visit · next'
+\t\t\tStaticText 'Monday, September 28 at 10 AM'
+\t\t[47] link 'Choose Bay Plumbing Co.', url='http://127.0.0.1:3000/taskhare/hire/p1'
+"""
 
 
-def test_prepare_service_booking_happy_path(demo):
-    result = json.loads(orders.prepare_service_booking(demo["user_id"], "p1", "plumber"))
-    assert result["action_id"]
-    assert "Ace Plumbing" in result["say"]
+def _heard(monkeypatch):
+    lines = []
+    monkeypatch.setattr(orders, "_speak_into_call", lambda loop, uid, msg, behavior="queue": lines.append(msg))
+    return lines
 
 
-def test_prepare_service_booking_unknown_provider(demo):
-    result = orders.prepare_service_booking(demo["user_id"], "does-not-exist", "plumber")
-    assert _data(result)["outcome"] == "error"
+def _found(demo, fake_runner, monkeypatch):
+    orders._services.clear()
+    heard = _heard(monkeypatch)
+    orders.find_home_service(demo["user_id"], "my sink is leaking")
+    fake_runner.finish(FakeJob(status="done", result_text=TASKERS_DONE))
+    return heard
 
 
-def test_confirm_service_booking_happy_path(demo, fake_db, fake_runner):
-    prepared = json.loads(orders.prepare_service_booking(demo["user_id"], "p1", "plumber"))
+def test_find_home_service_searches_taskhare_in_browser(demo, fake_runner, monkeypatch):
+    orders._services.clear()
+    heard = _heard(monkeypatch)
+    out = json.loads(orders.find_home_service(demo["user_id"], "my sink is leaking"))
+    assert "look on TaskHare" in out["say"] and out["data"]["outcome"] == "searching"
+    job = fake_runner.submitted[-1]
+    assert job["site"] == "taskhare" and job["lookup"] and job["mode"] == "taskers" and "my sink is leaking" in job["goal"]
+    fake_runner.finish(FakeJob(status="done", result_text=TASKERS_DONE))
+    sess = orders._services[demo["user_id"]]
+    assert sess["stage"] == "found" and [o["name"] for o in sess["options"]] == ["Bay Plumbing Co.", "Rapid Rooter"]
+    assert "two plumbers" in heard[-1] and "$120.00" in heard[-1] and "Monday, September 28 at 4 PM" in heard[-1] and "Who would you like?" in heard[-1]
+
+
+def test_find_home_service_reads_the_page_when_the_summary_is_off(demo, fake_runner, monkeypatch):
+    orders._services.clear()
+    heard = _heard(monkeypatch)
+    orders.find_home_service(demo["user_id"], "my sink is leaking")
+    job = FakeJob(status="done", result_text="DONE: I found some plumbers.")
+    job.final_text = RESULTS_PAGE
+    fake_runner.finish(job)
+    sess = orders._services[demo["user_id"]]
+    assert sess["stage"] == "found" and sess["options"][0]["name"] == "Bay Plumbing Co." and sess["category"] == "Plumbing"
+    assert "one plumber" in heard[-1] and "Want me to book them?" in heard[-1]
+
+
+def test_find_home_service_none_found(demo, fake_runner, monkeypatch):
+    orders._services.clear()
+    heard = _heard(monkeypatch)
+    orders.find_home_service(demo["user_id"], "teach my parrot to sing")
+    fake_runner.finish(FakeJob(status="done", result_text="DONE: TASKERS [Handyman]: none"))
+    assert orders._services[demo["user_id"]]["stage"] == "none" and "couldn't find anyone" in heard[-1]
+
+
+def test_find_home_service_failure_is_reported(demo, fake_runner, monkeypatch):
+    orders._services.clear()
+    heard = _heard(monkeypatch)
+    orders.find_home_service(demo["user_id"], "my sink is leaking")
+    fake_runner.finish(FakeJob(status="failed", result_text=""))
+    assert orders._services[demo["user_id"]]["stage"] == "error" and "try again" in heard[-1]
+
+
+def test_repeat_problem_while_searching_does_not_restart(demo, fake_runner):
+    orders._services.clear()
+    orders.find_home_service(demo["user_id"], "my sink is leaking")
+    out = json.loads(orders.find_home_service(demo["user_id"], "My sink is leaking!"))
+    assert "still looking" in out["say"] and len(fake_runner.submitted) == 1
+
+
+def test_prepare_service_booking_by_name_reads_back(demo, fake_runner, monkeypatch):
+    _found(demo, fake_runner, monkeypatch)
+    out = json.loads(orders.prepare_service_booking(demo["user_id"], "rapid rooter"))
+    assert out["action_id"] and "Rapid Rooter can come Monday, September 28 at 4 PM for $95.00. Should I book them?" == out["say"]
+
+
+def test_prepare_service_booking_over_limit_needs_family(demo, fake_db, fake_runner, monkeypatch):
+    _found(demo, fake_runner, monkeypatch)
+    out = json.loads(orders.prepare_service_booking(demo["user_id"], "the first one"))  # Bay Plumbing, $120 > $100 limit
+    assert out["data"]["outcome"] == "needs_approval" and "David" in out["say"] and not out.get("action_id")
+    rows = fake_db.table("approvals").select("*").eq("user_id", demo["user_id"]).execute().data
+    assert rows and rows[-1]["action"] == "book_service" and rows[-1]["payload"]["provider"] == "Bay Plumbing Co."
+
+
+def test_prepare_service_booking_unknown_name_asks_again(demo, fake_runner, monkeypatch):
+    _found(demo, fake_runner, monkeypatch)
+    out = json.loads(orders.prepare_service_booking(demo["user_id"], "Golden Gate"))
+    assert "Which one would you like" in out["say"] and "Bay Plumbing Co." in out["say"] and not out.get("action_id")
+
+
+def test_prepare_before_search_asks_for_the_problem(demo):
+    orders._services.clear()
+    out = json.loads(orders.prepare_service_booking(demo["user_id"], "Bay Plumbing"))
+    assert out["data"]["outcome"] == "error" and "TaskHare" in out["say"]
+
+
+def test_confirm_service_booking_continues_in_browser_and_records(demo, fake_db, fake_runner, monkeypatch):
+    heard = _found(demo, fake_runner, monkeypatch)
+    prepared = json.loads(orders.prepare_service_booking(demo["user_id"], "Rapid Rooter"))
     confirmed = json.loads(orders.confirm_service_booking(demo["user_id"], prepared["action_id"]))
-    assert "taskhare" in confirmed["say"].lower()
-    assert fake_runner.submitted[0]["site"] == "taskhare"
-    assert "Ace Plumbing" in fake_runner.submitted[0]["goal"]
-
-    fake_runner.finish(FakeJob(status="done", result_text="DONE: Booked Ace Plumbing."))
+    assert "booking Rapid Rooter on TaskHare" in confirmed["say"]
+    job = fake_runner.submitted[-1]
+    assert job["site"] == "taskhare" and not job["lookup"] and "Choose Rapid Rooter" in job["goal"] and "Monday, September 28 at 4 PM" in job["goal"]
+    fake_runner.finish(FakeJob(status="done", result_text="DONE: Rapid Rooter hired for plumbing on Monday, September 28 at 4 PM for $95."))
     rows = fake_db.table("service_bookings").select("*").eq("user_id", demo["user_id"]).execute().data
-    assert len(rows) == 1
-    assert rows[0]["status"] == "booked"
-    assert rows[0]["provider"] == "Ace Plumbing"
+    assert len(rows) == 1 and rows[0]["status"] == "booked" and rows[0]["provider"] == "Rapid Rooter"
+    assert rows[0]["scheduled_at"].endswith("-09-28T16:00:00-04:00")  # the demo user is in America/New_York
+    assert heard[-1] == "You're booked. Rapid Rooter will come Monday, September 28 at 4 PM."
+    # the pending action was consumed: a second yes is rejected
+    again = json.loads(orders.confirm_service_booking(demo["user_id"]))
+    assert again["data"]["outcome"] == "error"
 
 
-def test_confirm_service_booking_rejects_unknown_action_id(demo):
+def test_confirm_with_blank_action_id_uses_the_prepared_one(demo, fake_runner, monkeypatch):
+    _found(demo, fake_runner, monkeypatch)
+    orders.prepare_service_booking(demo["user_id"], "Rapid Rooter")
+    out = json.loads(orders.confirm_service_booking(demo["user_id"]))
+    assert "booking Rapid Rooter" in out["say"] and fake_runner.submitted[-1]["site"] == "taskhare"
+
+
+def test_confirm_service_booking_rejects_unknown_action_id(demo, fake_runner):
+    orders._services.clear()
     result = orders.confirm_service_booking(demo["user_id"], "not-a-real-id")
-    assert _data(result)["outcome"] == "error"
+    assert _data(result)["outcome"] == "error" and not fake_runner.submitted
 
+
+def test_family_yes_books_the_held_service(demo, fake_db, fake_runner, monkeypatch):
+    from webhooks.sms import handle_reply
+
+    _found(demo, fake_runner, monkeypatch)
+    orders.prepare_service_booking(demo["user_id"], "Bay Plumbing")
+    reply = handle_reply(demo["family_phone"], "YES")
+    assert "Booking Bay Plumbing Co." in reply
+    job = fake_runner.submitted[-1]
+    assert job["site"] == "taskhare" and not job["lookup"] and "Choose Bay Plumbing Co." in job["goal"]
+    assert orders._services[demo["user_id"]]["stage"] == "booking"

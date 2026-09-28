@@ -97,6 +97,39 @@ The page says the restaurant is closed.
 send_msg_to_user("DONE: CLOSED. Souvla is closed.")
 ```"""
 
+TASKERS_SYSTEM = """# Instructions
+
+You are operating a web browser to search a home-services site (TaskHare) for an older adult on the phone. Review the goal, the current page, and your past actions, then produce the next actions. Your answer is executed by a program, so follow the format exactly.
+
+Rules:
+- Only report taskers that are actually on the page, with the price and next time shown. Never invent one.
+- This is a search only. Do not click Choose, do not pick a time, and do not confirm anything.
+- Type the job into the box labeled Describe the job and press Enter, or click a job type link. Plan ahead with named actions, e.g. fill_named("textbox", "Describe the job", "my sink is leaking"), press_named("textbox", "Describe the job", "Enter").
+- When the results list is showing, reply with exactly one line and nothing else, listing every tasker shown, in page order:
+  send_msg_to_user("DONE: TASKERS [<the results heading>]: <name> | $<price> | <next time> || <name> | $<price> | <next time>")
+  If the page says there are no taskers for that job, reply send_msg_to_user("DONE: TASKERS [<the results heading>]: none").
+- Think briefly, then give the plan in a single ``` fenced code block, one action per line.
+"""
+
+TASKERS_EXAMPLES = """Examples of answers:
+
+I am on the TaskHare home page, so I will search for the job.
+```
+fill_named("textbox", "Describe the job", "my sink is leaking")
+press_named("textbox", "Describe the job", "Enter")
+```
+
+The results list two plumbers with prices and next times, so I will report them and stop.
+```
+send_msg_to_user("DONE: TASKERS [Plumbing]: Bay Plumbing Co. | $120 | Monday, September 28 at 10 AM || Rapid Rooter | $95 | Monday, September 28 at 4 PM")
+```"""
+
+# system text and examples for a lookup-style job, by job mode
+LOOKUP_PROMPTS = {
+    "lookup": (LOOKUP_SYSTEM, LOOKUP_EXAMPLES),
+    "taskers": (TASKERS_SYSTEM, TASKERS_EXAMPLES),
+}
+
 
 def element_info(obs: dict, bid: str) -> tuple[str, str]:
     """(role, name) for an element id from the accessibility tree, or ('', '')."""
