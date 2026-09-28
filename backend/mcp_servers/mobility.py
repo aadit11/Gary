@@ -86,16 +86,17 @@ def _search_term(place: str) -> str:
     return (place or "").split(",")[0].strip() or place
 
 
-# What the caller hears while the browser books the ride: (seconds since the job started, line).
-RIDE_PROGRESS = [
-    (3, "I'm looking for drivers right now. We should have one in a few minutes."),
-    (18, "Still looking for a driver. Just a moment more."),
-    (34, "Almost there, thanks for your patience."),
-    (52, "Still searching. I'll tell you the moment a driver is set."),
-]
-
-# Spoken into the call the moment the family says yes (voice/injection.py reads payload.done_say).
+# Spoken into the call the moment the family says yes (voice/injection.py reads payload.done_say),
+# and by confirm_ride on a spoken yes. The progress lines below follow it; none repeats it.
 FAMILY_YES_SAY = "I'm looking for a driver right now. We should have one in a few minutes."
+
+# What the caller hears while the browser books the ride: (seconds since the job started, line).
+# Each line is spoken once, in order, and only when the booking has run that long.
+RIDE_PROGRESS = [
+    (18, "Still looking for a driver. Just a moment more."),
+    (36, "Almost there, thanks for your patience."),
+    (54, "Still searching. I'll tell you the moment a driver is set."),
+]
 
 
 def _ride_progress(call_loop, user_id: str):
@@ -239,10 +240,7 @@ def confirm_ride(user_id: str, action_id: str = "") -> str:
         return speak(err.say, data={"category": "ride", "outcome": "error"})
     _last_action.pop(user_id, None)
     _start_ride(user_id, payload, _call_loop())
-    return speak(
-        "I'm booking your ride now. I'll tell you the driver's name as soon as one is set.",
-        data={"category": "ride", "outcome": "booking"},
-    )
+    return speak(FAMILY_YES_SAY, data={"category": "ride", "outcome": "booking"})
 
 
 @mobility.tool()

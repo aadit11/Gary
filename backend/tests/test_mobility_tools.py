@@ -148,7 +148,7 @@ def test_confirm_ride_books_in_browser_and_reports_driver(demo, profile, fake_db
     uid = demo["user_id"]
     prepared = _out(mobility.prepare_ride(uid, "Springfield General"))
     out = _out(mobility.confirm_ride(uid, prepared["action_id"]))
-    assert "booking your ride" in out["say"]
+    assert out["say"] == mobility.FAMILY_YES_SAY
     job = fake_runner.submitted[-1]
     assert job["site"] == "udriver" and HOME in job["goal"] and "Springfield General" in job["goal"] and "Request" in job["goal"]
     fake_runner.finish(FakeJob(status="done", final_text=TRIP_PAGE))
@@ -165,7 +165,7 @@ def test_confirm_ride_blank_action_id_uses_the_last_read_back(demo, profile, fak
     uid = demo["user_id"]
     mobility.prepare_ride(uid, "Springfield General")
     out = _out(mobility.confirm_ride(uid))
-    assert "booking your ride" in out["say"] and fake_runner.submitted[-1]["site"] == "udriver"
+    assert "looking for a driver" in out["say"] and fake_runner.submitted[-1]["site"] == "udriver"
 
 
 def test_confirm_ride_rejects_unknown_action_id(demo, profile, fake_runner):
@@ -234,11 +234,13 @@ def test_ride_progress_lines_are_spoken_once_in_order(demo, monkeypatch):
     clock = {"t": 1000.0}
     monkeypatch.setattr(mobility.time, "monotonic", lambda: clock["t"])
     on_progress = mobility._ride_progress(None, demo["user_id"])
-    on_progress("step"); assert heard == []            # right away: nothing yet
-    clock["t"] += 6; on_progress("step"); on_progress("step")
-    assert heard == [mobility.RIDE_PROGRESS[0][1]]     # first line once, not twice
-    clock["t"] += 60; on_progress("step")
+    on_progress("step"); clock["t"] += 6; on_progress("step")
+    assert heard == []                                  # the first 18 s: nothing (the yes line was just spoken)
+    clock["t"] += 14; on_progress("step"); on_progress("step"); on_progress("step")
+    assert heard == [mobility.RIDE_PROGRESS[0][1]]      # first line once, not three times
+    clock["t"] += 60; on_progress("step"); on_progress("step")
     assert heard == [line for _, line in mobility.RIDE_PROGRESS]  # the rest, in order, each once
+    assert mobility.FAMILY_YES_SAY not in heard         # never repeats the yes line
 
 
 def test_family_yes_sentence_does_not_claim_a_booking(demo, profile, fake_runner, monkeypatch):
