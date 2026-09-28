@@ -232,6 +232,17 @@ export default function ProfileEditor({
             </article>
             <article className="decision">
               <label className="choice">
+                <input type="checkbox" checked={profile.connectors.taskrabbit.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, taskrabbit: { ...profile.connectors.taskrabbit, connected: e.target.checked } } })} />
+                <span className="conn-row"><img src={PROVIDERS.find((p) => p.key === "taskrabbit")!.logo} alt="" /><strong>{PROVIDERS.find((p) => p.key === "taskrabbit")!.name}</strong></span>
+              </label>
+              {profile.connectors.taskrabbit.connected && (
+                <div className="fields">
+                  <label>Notes for the visit<input value={profile.connectors.taskrabbit.notes} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, taskrabbit: { ...profile.connectors.taskrabbit, notes: e.target.value } } })} placeholder="Ring twice, the dog is friendly" /></label>
+                </div>
+              )}
+            </article>
+            <article className="decision">
+              <label className="choice">
                 <input type="checkbox" checked={profile.connectors.gmail.connected} onChange={(e) => setProfile({ ...profile, connectors: { ...profile.connectors, gmail: { ...profile.connectors.gmail, connected: e.target.checked } } })} />
                 <span className="conn-row"><img src={PROVIDERS.find((p) => p.key === "gmail")!.logo} alt="" /><strong>Gmail</strong></span>
               </label>

@@ -9,7 +9,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   const [saved, contacts, name, params] = await Promise.all([loadProfile(), loadContacts(), careFirstName(), searchParams]);
   // ?fresh=1 (the landing page's Get started) always shows the flow from the start.
   const profile = params.fresh
-    ? { ...saved, connectors: { ...saved.connectors, doordash: { ...saved.connectors.doordash, connected: false }, uber: { ...saved.connectors.uber, connected: false }, groceries: { ...saved.connectors.groceries, connected: false } } }
+    ? { ...saved, connectors: { ...saved.connectors, doordash: { ...saved.connectors.doordash, connected: false }, uber: { ...saved.connectors.uber, connected: false }, groceries: { ...saved.connectors.groceries, connected: false }, taskrabbit: { ...saved.connectors.taskrabbit, connected: false } } }
     : saved;
   const person = name === "them" ? "your person" : name;
   return <Onboarding initial={profile} contacts={contacts} person={person} start={params.start} />;

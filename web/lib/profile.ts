@@ -43,6 +43,7 @@ export type CareProfile = {
     doordash: { connected: boolean; usual: string };
     uber: { connected: boolean; home: string; hospital: string; places: Place[] };
     groceries: { connected: boolean; store: string; restrictions: string[] };
+    taskrabbit: { connected: boolean; notes: string };
     banking: { connected: boolean };
     gmail: { connected: boolean; address: string };
     bank: { connected: boolean; institution: string; last4: string };
@@ -60,6 +61,7 @@ export function emptyProfile(home = ""): CareProfile {
       doordash: { connected: false, usual: "" },
       uber: { connected: false, home, hospital: "", places: [] },
       groceries: { connected: false, store: "", restrictions: [] },
+      taskrabbit: { connected: false, notes: "" },
       banking: { connected: false },
       gmail: { connected: false, address: "" },
       bank: { connected: false, institution: "", last4: "" },
@@ -118,6 +120,7 @@ function asProfile(raw: unknown, home = ""): CareProfile {
         store: body.connectors?.groceries?.store || "",
         restrictions: cleanList(body.connectors?.groceries?.restrictions),
       },
+      taskrabbit: { connected: Boolean(body.connectors?.taskrabbit?.connected), notes: String(body.connectors?.taskrabbit?.notes || "").slice(0, 200) },
       banking: { connected: Boolean(body.connectors?.banking?.connected) },
       gmail: { connected: Boolean(body.connectors?.gmail?.connected), address: String(body.connectors?.gmail?.address || "") },
       bank: {

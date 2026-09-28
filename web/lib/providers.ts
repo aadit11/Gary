@@ -1,6 +1,6 @@
 // App connectors shown in onboarding and on the landing page. Storage keys map to CareProfile.connectors.
 
-export type Key = "doordash" | "uber" | "groceries" | "gmail" | "bank";
+export type Key = "doordash" | "uber" | "groceries" | "taskrabbit" | "gmail" | "bank";
 
 export const PROVIDERS: {
   key: Key;
@@ -33,6 +33,14 @@ export const PROVIDERS: {
     color: "#FF3008",
     does: "order food",
     bullets: ["Order dinner, or \"the usual\", by phone", "Reads the order and total back before placing it", "Anything unusual waits for your okay"],
+  },
+  {
+    key: "taskrabbit",
+    name: "TaskRabbit",
+    logo: "/brands/taskrabbit.svg",
+    color: "#00A86B",
+    does: "book home help",
+    bullets: ["A plumber, handyman, or cleaner from a plain description of the problem", "Reads the tasker, price, and time back before booking", "Anyone new or over the limit waits for your okay"],
   },
   {
     key: "gmail",
