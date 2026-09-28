@@ -193,6 +193,8 @@ def run_due_appointments(now_utc: datetime | None = None) -> int:
         title = extra.get("title") or email.get("subject") or "an appointment"
         when = date_str(starts.astimezone(tz))
         note = f"{title} on {when}"
+        if extra.get("location"):
+            note += f" at {str(extra['location']).rstrip('.')}"
         try:
             place_outbound_call(email["user_id"], "appointment", note=note)
             name = _first_name(email["user_id"])

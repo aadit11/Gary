@@ -6,6 +6,8 @@ Rules, in order (the first that matches decides):
   1. payee or message_text matches a scam pattern          -> needs approval
   2. amount > POLICY_SPENDING_LIMIT                         -> needs approval
   3. bill/person payee not in known_payees                  -> needs approval
+  3b. ride to a place the family has not saved              -> needs approval
+     (the profile's home, hospital, and saved places, plus the user's address)
   4. bill/person payment that is not recurring and amount
      > the hard limit (users.hard_limit, else POLICY_HARD_LIMIT) -> needs approval
 
@@ -89,6 +91,46 @@ def is_known_payee(user_id: str, payee: str | None) -> bool:
     return _known_payee(user_id, payee) is not None
 
 
+PROFILE_GMAIL_ID = "caregiver-profile"
+
+
+def saved_places(user_id: str) -> list[str]:
+    """Places the family has saved for rides: the user's address and the profile's home, hospital, and places."""
+    places: list[str] = []
+    try:
+        client = db.get_client()
+        rows = client.table("users").select("*").eq("id", user_id).limit(1).execute().data
+        if rows and rows[0].get("address"):
+            places.append(str(rows[0]["address"]))
+        prof = client.table("emails").select("*").eq("user_id", user_id).eq("gmail_id", PROFILE_GMAIL_ID).limit(1).execute().data
+        uber = (((prof[0].get("extracted") or {}).get("connectors") or {}).get("uber") or {}) if prof else {}
+        for key in ("home", "hospital"):
+            if uber.get(key):
+                places.append(str(uber[key]))
+        for place in uber.get("places") or []:
+            if isinstance(place, dict):
+                places.extend(str(place[k]) for k in ("label", "address") if place.get(k))
+    except Exception:  # noqa: BLE001
+        pass
+    return [p for p in places if p.strip()]
+
+
+def _norm_place(text: str | None) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", (text or "").casefold()))
+
+
+def is_known_place(user_id: str, place: str | None) -> bool:
+    """True when the destination matches a saved place (either contains the other, ignoring punctuation and case)."""
+    want = _norm_place(place)
+    if not want:
+        return False
+    for saved in saved_places(user_id):
+        have = _norm_place(saved)
+        if have and (have in want or want in have):
+            return True
+    return False
+
+
 def hard_limit_for(user_id: str) -> float:
     """The user's one-off payment limit: users.hard_limit when set, else POLICY_HARD_LIMIT."""
     try:
@@ -143,6 +185,8 @@ def check(
         return Decision(True, f"it's more than the usual limit of ${limit:,.0f}", family, kind)
     if kind in PAYMENT_KINDS and not is_known_payee(user_id, payee):
         return Decision(True, f"{payee} is someone we haven't paid before", family, kind)
+    if kind == "ride" and not is_known_place(user_id, payee):
+        return Decision(True, f"{payee} is a new place that isn't saved", family, kind)
 
     recurring = kind == "bill" and is_recurring_bill(user_id, payee, amt)
     if kind in PAYMENT_KINDS and not recurring:
