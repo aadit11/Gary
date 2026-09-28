@@ -96,7 +96,8 @@ Flows:
 │   │   └── jobs.py                  # due reminders, morning briefings, retries
 │   ├── webhooks/                    # OWNER: Person 2
 │   │   ├── __init__.py
-│   │   └── sms.py                   # inbound SMS (YES/NO approvals)
+│   │   ├── sms.py                   # inbound SMS (YES/NO approvals)
+│   │   └── welcome.py               # POST /notify/welcome: hello text to the approver after onboarding
 │   ├── scripts/
 │   │   ├── seed_demo_user.py        # demo user, family contact, favorites, known payees
 │   │   └── seed_gmail.py            # optional: send seed emails to demo inbox
@@ -125,6 +126,7 @@ Flows:
     │       └── biller/{bills,pay}/route.ts
     └── lib/
         ├── supabase.ts
+        ├── contacts.ts              # elder + caregiver names and phones (users, family_contacts)
         └── mock-data/               # static JSON: bills, providers
 ```
 
@@ -221,8 +223,8 @@ Turn-taking is tuned in `voice/agent_settings.py` to tolerate long pauses. Don't
 
 | Table | Purpose |
 |---|---|
-| `users` | Demo user profile: name, phone, address, timezone |
-| `family_contacts` | Family members, phone numbers, approval rights |
+| `users` | Demo user profile: name, phone, address, timezone. Name and phone are the elder's, written by web onboarding and the profile Settings tab; inbound calls are matched on `phone` (E.164) |
+| `family_contacts` | Family members, phone numbers, approval rights. The `can_approve` row is the caregiver from onboarding; approval texts go to its `phone` |
 | `known_payees` | Trusted billers/recipients |
 | `emails` | Ingested emails with classification (`bill`, `appointment`, `scam`, `other`) and extracted fields |
 | `bills` | Payee, amount, due date, status, source email |
